@@ -23,7 +23,7 @@
         </div>
         <div class="row">
           <label>Max size: <strong>{{ maxSize.toFixed(1) }}</strong> px</label>
-          <input type="range" min="0.5" max="10" step="0.1" v-model.number="maxSize" />
+          <input type="range" min="0.5" max="20" step="0.1" v-model.number="maxSize" />
         </div>
         <div class="row">
           <label>Min speed: <strong>{{ minSpeed.toFixed(0) }}</strong> px/s</label>
@@ -95,6 +95,225 @@
           <input type="checkbox" v-model="drawTrails" />
         </div>
       </section>
+
+      <section class="control-group">
+        <h3>Lightning</h3>
+
+        <div class="row">
+          <label>Enable</label>
+          <input type="checkbox" v-model="lightning.cfg.enabled" />
+        </div>
+
+        <div class="row">
+          <label>Spawn delay (ms)</label>
+          <input type="range" min="0" max="3000" step="50" v-model.number="lightning.cfg.initialDelayMs" />
+        </div>
+        <div class="row">
+          <label>Interval (ms)</label>
+          <input type="range" min="200" max="5000" step="50" v-model.number="lightning.cfg.intervalMs" />
+        </div>
+        <div class="row">
+          <label>Hop delay (ms)</label>
+          <input type="range" min="0" max="400" step="5" v-model.number="lightning.cfg.hopDelayMs" />
+        </div>
+
+        <div class="row">
+          <label>Left column (px)</label>
+          <input type="range" min="10" max="400" step="2" v-model.number="lightning.cfg.leftColWidth" />
+        </div>
+        <div class="row">
+          <label>Right column (px)</label>
+          <input type="range" min="10" max="400" step="2" v-model.number="lightning.cfg.rightColWidth" />
+        </div>
+        <div class="row">
+          <label>Max hop dist (px)</label>
+          <input type="range" min="20" max="400" step="2" v-model.number="lightning.cfg.maxStepDist" />
+        </div>
+        <div class="row">
+          <label>Max steps/branch</label>
+          <input type="range" min="5" max="200" step="1" v-model.number="lightning.cfg.maxStepsPerBranch" />
+        </div>
+        <div class="row">
+          <label>Split chance</label>
+          <input type="range" min="0" max="1" step="0.01" v-model.number="lightning.cfg.splitChance" />
+        </div>
+
+        <div class="row">
+          <label>Hue</label>
+          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvBase.h" />
+        </div>
+        <div class="row">
+          <label>Sat</label>
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.s" />
+        </div>
+        <div class="row">
+          <label>Val</label>
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.v" />
+        </div>
+        <div class="row">
+          <label>Preview</label>
+          <div :style="{width:'28px',height:'16px',borderRadius:'6px',border:'1px solid #555', background: lightning.colorPreview}"></div>
+        </div>
+
+        <div class="row">
+          <label>Core width</label>
+          <input type="range" min="0.5" max="8" step="0.1" v-model.number="lightning.cfg.lineWidth" />
+        </div>
+        <div class="row">
+          <label>Core alpha</label>
+          <input type="range" min="0.05" max="1" step="0.01" v-model.number="lightning.cfg.preAlpha" />
+        </div>
+
+        <!-- Feather/halo controls -->
+        <div class="row">
+          <label>Halo width ×</label>
+          <input type="range" min="0" max="4" step="0.05" v-model.number="lightning.cfg.haloWidthMult" />
+        </div>
+        <div class="row">
+          <label>Halo alpha ×</label>
+          <input type="range" min="0" max="1" step="0.02" v-model.number="lightning.cfg.haloAlphaMult" />
+        </div>
+        <div class="row">
+          <label>Halo blur</label>
+          <input type="range" min="0" max="30" step="1" v-model.number="lightning.cfg.haloBlur" />
+        </div>
+
+        <!-- Spark-up timings -->
+        <div class="row">
+          <label>Rise (ms)</label>
+          <input type="range" min="10" max="600" step="5" v-model.number="lightning.cfg.riseMs" />
+        </div>
+        <div class="row">
+          <label>Spark rise (ms)</label>
+          <input type="range" min="10" max="600" step="5" v-model.number="lightning.cfg.sparkRiseMs" />
+        </div>
+        <div class="row">
+          <label>Spark hold (ms)</label>
+          <input type="range" min="50" max="2000" step="10" v-model.number="lightning.cfg.sparkHoldMs" />
+        </div>
+        <div class="row">
+          <label>Fade (ms)</label>
+          <input type="range" min="50" max="4000" step="10" v-model.number="lightning.cfg.fadeMs" />
+        </div>
+        <div class="row">
+          <label>No-win delay (ms)</label>
+          <input type="range" min="0" max="2000" step="10" v-model.number="lightning.cfg.noWinDelayMs" />
+        </div>
+
+        <!-- Winner vs others -->
+        <div class="row">
+          <label>Win width ×</label>
+          <input type="range" min="1" max="6" step="0.05" v-model.number="lightning.cfg.sparkWidthMult" />
+        </div>
+        <div class="row">
+          <label>Lose width ×</label>
+          <input type="range" min="0.1" max="2" step="0.05" v-model.number="lightning.cfg.loserWidthMult" />
+        </div>
+        <div class="row">
+          <label>Win alpha ×</label>
+          <input type="range" min="1" max="4" step="0.05" v-model.number="lightning.cfg.sparkAlphaMult" />
+        </div>
+        <div class="row">
+          <label>Lose alpha ×</label>
+          <input type="range" min="0.05" max="1" step="0.05" v-model.number="lightning.cfg.loserAlphaMult" />
+        </div>
+
+        <div class="row">
+          <label>Color noise H (±°)</label>
+          <input type="range" min="0" max="180" step="1" v-model.number="lightning.cfg.colorNoiseH" />
+        </div>
+        <div class="row">
+          <label>Color noise S (±)</label>
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseS" />
+        </div>
+        <div class="row">
+          <label>Color noise V (±)</label>
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseV" />
+        </div>
+        <div class="row">
+          <label>Width noise (±%)</label>
+          <input type="range" min="0" max="1" step="0.01" v-model.number="lightning.cfg.widthNoisePct" />
+        </div>
+
+        <!-- Base phase -->
+        <div class="row">
+          <label>Base form</label>
+          <select v-model="lightning.cfg.renderModeBase">
+            <option value="stroke">Stroke</option><option value="rect">Rect</option><option value="capsule">Capsule</option>
+          </select>
+        </div>
+        <div class="row" v-if="lightning.cfg.renderModeBase==='stroke'">
+          <label>Base line cap</label>
+          <select v-model="lightning.cfg.lineCapBase">
+            <option>butt</option><option>round</option><option>square</option>
+          </select>
+        </div>
+
+        <!-- Spark phase -->
+        <div class="row">
+          <label>Spark winner form</label>
+          <select v-model="lightning.cfg.renderModeSparkWin">
+            <option value="stroke">Stroke</option><option value="rect">Rect</option><option value="capsule">Capsule</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Spark loser form</label>
+          <select v-model="lightning.cfg.renderModeSparkLose">
+            <option value="stroke">Stroke</option><option value="rect">Rect</option><option value="capsule">Capsule</option>
+          </select>
+        </div>
+        <div class="row" v-if="lightning.cfg.renderModeSparkWin==='stroke' || lightning.cfg.renderModeSparkLose==='stroke'">
+          <label>Spark line cap</label>
+          <select v-model="lightning.cfg.lineCapSpark">
+            <option>butt</option><option>round</option><option>square</option>
+          </select>
+        </div>
+
+        <!-- Colors with previews -->
+        <div class="row">
+          <label>Base HSV</label>
+          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvBase.h">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.s">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.v">
+          <div :style="{width:'28px',height:'16px',border:'1px solid #555',borderRadius:'6px',background: lightning.colorPreviewBase}"></div>
+        </div>
+        <div class="row">
+          <label>Spark WIN HSV</label>
+          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvSparkWin.h">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkWin.s">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkWin.v">
+          <div :style="{width:'28px',height:'16px',border:'1px solid #555',borderRadius:'6px',background: lightning.colorPreviewWin}"></div>
+        </div>
+        <div class="row">
+          <label>Spark LOSE HSV</label>
+          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvSparkLose.h">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkLose.s">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkLose.v">
+          <div :style="{width:'28px',height:'16px',border:'1px solid #555',borderRadius:'6px',background: lightning.colorPreviewLose}"></div>
+        </div>
+
+        <!-- Noise -->
+        <div class="row">
+          <label>Base color noise (±H/S/V)</label>
+          <input type="range" min="0" max="180" step="1" v-model.number="lightning.cfg.colorNoiseBase.h">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseBase.s">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseBase.v">
+        </div>
+        <div class="row">
+          <label>Spark color noise (±H/S/V)</label>
+          <input type="range" min="0" max="180" step="1" v-model.number="lightning.cfg.colorNoiseSpark.h">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseSpark.s">
+          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseSpark.v">
+        </div>
+        <div class="row">
+          <label>Width noise (±%)</label>
+          <input type="range" min="0" max="1" step="0.01" v-model.number="lightning.cfg.widthNoisePct">
+        </div>
+
+
+        <button class="btn" @click="lightning.spawnNow()">Spawn now</button>
+      </section>
+
     </aside>
 
     <main class="stage">
@@ -105,6 +324,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, reactive, watch } from 'vue'
+import { useLightning } from './useLightning.js'
 
 /* ----------------------- Reactive controls ----------------------- */
 const modes = [
@@ -153,11 +373,11 @@ const modes = [
 ]
 const movementMode = ref('sineflow')
 
-const particleCount = ref(1200)
-const minSize = ref(1.0)
-const maxSize = ref(4.0)
+const particleCount = ref(3000)
+const minSize = ref(6.0)
+const maxSize = ref(20.0)
 const minSpeed = ref(30)
-const maxSpeed = ref(160)
+const maxSpeed = ref(100)
 
 const hsvStart = reactive({ h: 200, s: 80, v: 90 })
 const hsvEnd   = reactive({ h: 320, s: 80, v: 90 })
@@ -173,18 +393,36 @@ let animationId = null
 let lastT = 0
 
 let W = 0, H = 0, DPR = Math.min(2, window.devicePixelRatio || 1)
+let view = {
+  W, H, DPR
+}
+let world = {
+  W, H,
+}
+view.W = 0; view.H = 0, DPR = Math.min(2, window.devicePixelRatio || 1)
+world.W = view.W + view.H
+world.H = view.H + view.H
 
 const particles = [] // {x,y,prevX,prevY,speed,size,hsvT,color,angle,tag}
+
+const lightning = useLightning({
+  getCtx: () => ctx,
+  getSize: () => ({ W, H }),
+  getParticles: () => particles,
+})
 
 /* ---------- utils ---------- */
 function resizeCanvas() {
   const el = canvasEl.value
   if (!el) return
-  W = el.clientWidth
-  H = el.clientHeight
-  el.width = Math.floor(W * DPR)
-  el.height = Math.floor(H * DPR)
+  view.W = el.clientWidth
+  view.H = el.clientHeight
+  el.width = Math.floor(view.W * DPR)
+  el.height = Math.floor(view.H * DPR)
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+  lightning.setSize(view.W, view.H)
+  world.W = view.W + view.H
+  world.H = view.H + view.H
 }
 function rand(min, max) { return min + Math.random() * (max - min) }
 function clamp01(x) { return Math.max(0, Math.min(1, x)) }
@@ -238,11 +476,11 @@ function noiseAngle(x, y, t) {
 function makeParticles() {
   particles.length = 0
   const n = particleCount.value
-  const aspect = W / Math.max(1, H)
+  const aspect = (world.W) / Math.max(1, (world.H))
   const cols = Math.ceil(Math.sqrt(n * aspect))
   const rows = Math.ceil(n / cols)
-  const gx = W / cols
-  const gy = H / rows
+  const gx = world.W / cols
+  const gy = world.H / rows
 
   for (let i = 0; i < n; i++) {
     const c = i % cols
@@ -279,28 +517,28 @@ function strokeToroidal(x1, y1, x2, y2, lineWidth, color) {
   let ax = x1, ay = y1
   let dx = x2 - ax
   let dy = y2 - ay
-  if (dx >  W/2) ax += W; else if (dx < -W/2) ax -= W
-  if (dy >  H/2) ay += H; else if (dy < -H/2) ay -= H
+  if (dx >  world.W/2) ax += world.W; else if (dx < -world.W/2) ax -= world.W
+  if (dy >  world.H/2) ay += world.H; else if (dy < -world.H/2) ay -= world.H
 
   ctx.beginPath()
-  ctx.moveTo(ax, ay)
-  ctx.lineTo(x2, y2)
+  ctx.moveTo(ax - view.H/2, ay - view.H/2)
+  ctx.lineTo(x2 - view.H/2, y2 - view.H/2)
   ctx.lineWidth = lineWidth
   ctx.strokeStyle = color
   ctx.stroke()
 
   if (ax < 0) {
-    ctx.beginPath(); ctx.moveTo(ax + W, ay); ctx.lineTo(x2 + W, y2)
+    ctx.beginPath(); ctx.moveTo(ax + world.W - view.H/2, ay - view.H/2); ctx.lineTo(x2 + world.W - view.H/2, y2 - view.H/2)
     ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
-  } else if (ax >= W) {
-    ctx.beginPath(); ctx.moveTo(ax - W, ay); ctx.lineTo(x2 - W, y2)
+  } else if (ax >= world.W) {
+    ctx.beginPath(); ctx.moveTo(ax - world.W - view.H/2, ay - view.H/2); ctx.lineTo(x2 - world.W - view.H/2, y2 - view.H/2)
     ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
   }
   if (ay < 0) {
-    ctx.beginPath(); ctx.moveTo(ax, ay + H); ctx.lineTo(x2, y2 + H)
+    ctx.beginPath(); ctx.moveTo(ax - view.H/2, ay + world.H - view.H/2); ctx.lineTo(x2 - view.H/2, y2 + world.H - view.H/2)
     ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
-  } else if (ay >= H) {
-    ctx.beginPath(); ctx.moveTo(ax, ay - H); ctx.lineTo(x2, y2 - H)
+  } else if (ay >= world.H) {
+    ctx.beginPath(); ctx.moveTo(ax - view.H/2, ay - world.H); ctx.lineTo(x2 - view.H/2, y2 - world.H)
     ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
   }
 }
@@ -317,7 +555,7 @@ function field_sineflow(p, t) {
   return norm(vx, vy)
 }
 function field_swirl(p, t) {
-  const cx = W * 0.5, cy = H * 0.5
+  const cx = world.W * 0.5, cy = world.H * 0.5
   const dx = p.x - cx, dy = p.y - cy
   let vx = -dy, vy = dx
   const wob = Math.sin(t * 0.001) * 0.3 + 1.0
@@ -344,8 +582,8 @@ function field_lissajous(p, t) {
 }
 function field_orbits(p, t) {
   const hubs = [
-    { x: W*0.3 + Math.sin(t*0.0003)*W*0.1, y: H*0.4 + Math.cos(t*0.0002)*H*0.12 },
-    { x: W*0.7 + Math.cos(t*0.00025)*W*0.1, y: H*0.6 + Math.sin(t*0.00018)*H*0.12 },
+    { x: world.W*0.3 + Math.sin(t*0.0003)*world.W*0.1, y: world.H*0.4 + Math.cos(t*0.0002)*world.H*0.12 },
+    { x: world.W*0.7 + Math.cos(t*0.00025)*world.W*0.1, y: world.H*0.6 + Math.sin(t*0.00018)*world.H*0.12 },
   ]
   const h = hubs[(p.tag * 2)|0]
   const dx = p.x - h.x, dy = p.y - h.y
@@ -354,9 +592,9 @@ function field_orbits(p, t) {
 }
 function field_multiwell(p, t) {
   const A = [
-    { x: W*0.2 + Math.sin(t*0.0004+0.0)*W*0.08, y: H*0.3 + Math.cos(t*0.0003+1.0)*H*0.08 },
-    { x: W*0.5 + Math.sin(t*0.0003+2.1)*W*0.05, y: H*0.5 + Math.cos(t*0.0005+0.2)*H*0.05 },
-    { x: W*0.8 + Math.sin(t*0.00035+3.2)*W*0.07, y: H*0.7 + Math.cos(t*0.00028+2.2)*H*0.07 },
+    { x: world.W*0.2 + Math.sin(t*0.0004+0.0)*world.W*0.08, y: world.H*0.3 + Math.cos(t*0.0003+1.0)*world.H*0.08 },
+    { x: world.W*0.5 + Math.sin(t*0.0003+2.1)*world.W*0.05, y: world.H*0.5 + Math.cos(t*0.0005+0.2)*world.H*0.05 },
+    { x: world.W*0.8 + Math.sin(t*0.00035+3.2)*world.W*0.07, y: world.H*0.7 + Math.cos(t*0.00028+2.2)*world.H*0.07 },
   ]
   let vx=0, vy=0
   for (const a of A) {
@@ -380,7 +618,7 @@ function field_vortexgrid(p, t) {
   return norm(vx*wob, vy*wob)
 }
 function field_doublegyre(p, t) {
-  const x = p.x / W, y = p.y / H
+  const x = p.x / world.W, y = p.y / world.H
   const A = 1.0, a = 0.1, w = 2*Math.PI*0.05
   const eps = Math.sin(w * t * 0.001)
   const f = a * eps * x*x + (1 - 2*a*eps) * x
@@ -391,15 +629,15 @@ function field_doublegyre(p, t) {
 }
 function field_shear(p, t) {
   const phase = t * 0.0007
-  const ny = (p.y / H) * 2*Math.PI
-  const nx = (p.x / W) * 2*Math.PI
+  const ny = (p.y / world.H) * 2*Math.PI
+  const nx = (p.x / world.W) * 2*Math.PI
   const jets = Math.sin(ny * 3 + 0.7*Math.sin(nx + phase))
   const cross = 0.5 * Math.sin(nx*1.3 - phase)
   return norm(jets, cross)
 }
 function field_spiralwave(p, t) {
-  const cx = W*0.5 + Math.sin(t*0.0003)*W*0.05
-  const cy = H*0.5 + Math.cos(t*0.00025)*H*0.05
+  const cx = world.W*0.5 + Math.sin(t*0.0003)*world.W*0.05
+  const cy = world.H*0.5 + Math.cos(t*0.00025)*world.H*0.05
   const dx = p.x - cx, dy = p.y - cy
   const r = Math.hypot(dx, dy) + 1e-3
   const rot = 1.0 + 0.3*Math.sin(t*0.001)
@@ -421,8 +659,8 @@ function field_hexvortex(p, t) {
 }
 function field_lemniscate(p, t) {
   const s = 0.25 + 0.05*Math.sin(t*0.0007)
-  const f1 = { x: W*(0.5 - s), y: H*0.5 }
-  const f2 = { x: W*(0.5 + s), y: H*0.5 }
+  const f1 = { x: world.W*(0.5 - s), y: world.H*0.5 }
+  const f2 = { x: world.W*(0.5 + s), y: world.H*0.5 }
   function tangential(fx, fy) {
     const dx = p.x - fx, dy = p.y - fy
     const r2 = dx*dx + dy*dy + 200
@@ -433,7 +671,7 @@ function field_lemniscate(p, t) {
   return norm(v1.x + v2.x, v1.y + v2.y)
 }
 function field_saddle(p, t) {
-  const cx = W*0.5, cy = H*0.5
+  const cx = world.W*0.5, cy = world.H*0.5
   const dx = (p.x - cx), dy = (p.y - cy)
   const ang = t*0.0003
   const ca = Math.cos(ang), sa = Math.sin(ang)
@@ -448,13 +686,13 @@ function field_noisecurl(p, t) {
   return norm(nx, -ny)
 }
 function field_jetstream(p, t) {
-  const ny = (p.y / H) * 2*Math.PI
+  const ny = (p.y / world.H) * 2*Math.PI
   let vx = Math.sin(ny * 5 + 0.5*Math.sin(p.x*0.004 + t*0.001))
   let vy = 0.4 * Math.sin(p.x*0.002 - t*0.0008)
   return norm(vx, vy)
 }
 function field_galactic(p, t) {
-  const cx = W*0.5, cy = H*0.5
+  const cx = world.W*0.5, cy = world.H*0.5
   const dx = p.x - cx, dy = p.y - cy
   const r = Math.hypot(dx, dy) + 1e-3
   let vx = -dy / r, vy = dx / r
@@ -463,8 +701,8 @@ function field_galactic(p, t) {
   return norm(vx, vy)
 }
 function field_quasiperiodic(p, t) {
-  const c1 = { x: W*0.35 + Math.sin(t*0.00037)*W*0.06, y: H*0.45 + Math.cos(t*0.00041)*H*0.05 }
-  const c2 = { x: W*0.65 + Math.cos(t*0.00029)*W*0.07, y: H*0.55 + Math.sin(t*0.00033)*H*0.06 }
+  const c1 = { x: world.W*0.35 + Math.sin(t*0.00037)*world.W*0.06, y: world.H*0.45 + Math.cos(t*0.00041)*world.H*0.05 }
+  const c2 = { x: world.W*0.65 + Math.cos(t*0.00029)*world.W*0.07, y: world.H*0.55 + Math.sin(t*0.00033)*world.H*0.06 }
   function swirl(cx, cy) {
     const dx = p.x - cx, dy = p.y - cy
     const r2 = dx*dx + dy*dy + 150
@@ -490,8 +728,8 @@ function field_catseye(p, t){
   const U = 1, Ly = 70, k = 2*Math.PI/220
   const ph = k*p.x - t*0.0006
   const sech2 = (y)=>{ const e=Math.cosh(y/Ly); return 1/(e*e) }
-  const u = U*Math.tanh((p.y-H/2)/Ly) + 0.8*sech2(p.y-H/2)*Math.cos(ph)
-  const v = -0.8*(2*(p.y-H/2)/Ly)*sech2(p.y-H/2)*Math.sin(ph)
+  const u = U*Math.tanh((p.y-world.H*0.5)/Ly) + 0.8*sech2(p.y-world.H*0.5)*Math.cos(ph)
+  const v = -0.8*(2*(p.y-world.H*0.5)/Ly)*sech2(p.y-world.H*0.5)*Math.sin(ph)
   return norm(u, v)
 }
 
@@ -505,9 +743,9 @@ function field_doublehelix(p, t){
 
 // 4) Mexican-hat ring vortex
 function field_mexicanring(p, t){
-  const cx=W/2, cy=H/2
+  const cx=world.W/2, cy=world.H/2
   const dx=p.x-cx, dy=p.y-cy, r=Math.hypot(dx,dy)+1e-3
-  const r0 = Math.min(W,H)*0.28
+  const r0 = Math.min(world.W, world.H)*0.28
   const g = Math.exp(-((r-r0)*(r-r0))/(2*(r0*0.25)**2)) * (1+0.3*Math.sin(t*0.001))
   return norm(-dy*g, dx*g)
 }
@@ -524,7 +762,7 @@ function field_spiraltiles(p, t){
 
 // 6) Swirl + noise
 function field_noisyswirl(p, t){
-  const cx=W/2, cy=H/2, dx=p.x-cx, dy=p.y-cy
+  const cx=world.W/2, cy=world.H/2, dx=p.x-cx, dy=p.y-cy
   const base = norm(-dy, dx)
   const a = noiseAngle(p.x*1.2, p.y*1.2, t)
   return norm(base.x + 0.6*Math.cos(a), base.y + 0.6*Math.sin(a))
@@ -532,7 +770,7 @@ function field_noisyswirl(p, t){
 
 // 7) Vortex dipole
 function field_dipole(p, t){
-  const s=0.22, c1={x:W*(0.5-s),y:H*0.5}, c2={x:W*(0.5+s),y:H*0.5}
+  const s=0.22, c1={x:world.W*(0.5-s),y:world.H*0.5}, c2={x:world.W*(0.5+s),y:world.H*0.5}
   function v(cx,cy,sgn){ const dx=p.x-cx,dy=p.y-cy; const r2=dx*dx+dy*dy+120; return {x: sgn*(-dy/r2), y: sgn*(dx/r2)}}
   const v1=v(c1.x,c1.y,1), v2=v(c2.x,c2.y,-1)
   return norm(v1.x+v2.x, v1.y+v2.y)
@@ -540,8 +778,8 @@ function field_dipole(p, t){
 
 // 8) Vortex quadrupole
 function field_quadrupole(p, t){
-  const d=W*0.18
-  const C=[{x:W/2-d,y:H/2-d, s:1},{x:W/2+d,y:H/2-d,s:-1},{x:W/2-d,y:H/2+d,s:-1},{x:W/2+d,y:H/2+d,s:1}]
+  const d=world.W*0.18
+  const C=[{x:world.W/2-d,y:world.H/2-d, s:1},{x:world.W/2+d,y:world.H/2-d,s:-1},{x:world.W/2-d,y:world.H/2+d,s:-1},{x:world.W/2+d,y:world.H/2+d,s:1}]
   let vx=0,vy=0
   for(const c of C){ const dx=p.x-c.x,dy=p.y-c.y; const r2=dx*dx+dy*dy+140; vx+=c.s*(-dy/r2); vy+=c.s*(dx/r2) }
   return norm(vx,vy)
@@ -549,10 +787,10 @@ function field_quadrupole(p, t){
 
 // 9) Three-body swirls
 function field_threebody(p, t){
-  const R=W*0.25
-  const c1={x:W/2+R*Math.cos(t*0.0004),y:H/2+R*Math.sin(t*0.0004)}
-  const c2={x:W/2+R*Math.cos(t*0.0004+2.094),y:H/2+R*Math.sin(t*0.0004+2.094)}
-  const c3={x:W/2+R*Math.cos(t*0.0004+4.188),y:H/2+R*Math.sin(t*0.0004+4.188)}
+  const R=world.W*0.25
+  const c1={x:world.W/2+R*Math.cos(t*0.0004),y:world.H/2+R*Math.sin(t*0.0004)}
+  const c2={x:world.W/2+R*Math.cos(t*0.0004+2.094),y:world.H/2+R*Math.sin(t*0.0004+2.094)}
+  const c3={x:world.W/2+R*Math.cos(t*0.0004+4.188),y:world.H/2+R*Math.sin(t*0.0004+4.188)}
   const C=[c1,c2,c3]
   let vx=0,vy=0
   for(const c of C){ const dx=p.x-c.x,dy=p.y-c.y; const r2=dx*dx+dy*dy+180; vx+=-dy/r2; vy+=dx/r2 }
@@ -581,7 +819,7 @@ function field_rantiles(p, t){
 
 // 12) Five-petal rose (angle driven by θ*5)
 function field_rose5(p, t){
-  const cx=W/2, cy=H/2
+  const cx=world.W/2, cy=world.H/2
   const dx=p.x-cx, dy=p.y-cy
   const theta=Math.atan2(dy,dx), r=Math.hypot(dx,dy)+1e-3
   const a = 5*theta + 0.5*Math.sin(t*0.001)
@@ -597,9 +835,9 @@ function field_barberpole(p, t){
 
 // 14) Polar jets ring (fast ring at radius r0)
 function field_polarjets(p, t){
-  const cx=W/2, cy=H/2
+  const cx=world.W/2, cy=world.H/2
   const dx=p.x-cx, dy=p.y-cy, r=Math.hypot(dx,dy)+1e-3
-  const r0=Math.min(W,H)*0.35
+  const r0=Math.min(world.W,world.H)*0.35
   const band = Math.exp(-((r-r0)**2)/(2*(r0*0.15)**2))
   return norm(-dy*band, dx*band)
 }
@@ -615,7 +853,7 @@ function field_crystal(p, t){
 
 // 16) Star fan (radial/tangential alternation by sector)
 function field_starfan(p, t){
-  const cx=W/2, cy=H/2
+  const cx=world.W/2, cy=world.H/2
   const dx=p.x-cx, dy=p.y-cy
   const theta=Math.atan2(dy,dx)
   const sectors=8
@@ -625,7 +863,7 @@ function field_starfan(p, t){
 
 // 17) Sunburst (breathing radial)
 function field_sunburst(p, t){
-  const cx=W/2, cy=H/2
+  const cx=world.W/2, cy=world.H/2
   const dx=p.x-cx, dy=p.y-cy
   const b = 0.3*Math.sin(t*0.001)
   return norm(dx*(1+b), dy*(1+b))
@@ -642,14 +880,14 @@ function field_latticewaves(p, t){
 // 19) Bend & fold (tanh-based folding map)
 function field_bendfold(p, t){
   const s=0.006, ph=t*0.001
-  const fx = Math.tanh(s*(p.y - H/2) + 0.5*Math.sin(ph))
-  const fy = Math.tanh(s*(p.x - W/2) - 0.5*Math.cos(ph))
+  const fx = Math.tanh(s*(p.y - world.H/2) + 0.5*Math.sin(ph))
+  const fy = Math.tanh(s*(p.x - world.W/2) - 0.5*Math.cos(ph))
   return norm(fx, -fy)
 }
 
 // 20) Log-spiral + noise
 function field_lognoise(p, t){
-  const cx=W/2, cy=H/2, dx=p.x-cx, dy=p.y-cy
+  const cx=world.W/2, cy=world.H/2, dx=p.x-cx, dy=p.y-cy
   const r=Math.hypot(dx,dy)+1e-3
   const tang = norm(-dy/r, dx/r)
   const a = noiseAngle(p.x, p.y, t)
@@ -710,9 +948,9 @@ function step(ts) {
 
   if (drawTrails.value && trailFade.value > 0) {
     ctx.fillStyle = `rgba(0,0,0,${trailFade.value})`
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
   } else {
-    ctx.clearRect(0, 0, W, H)
+    ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
   }
 
   const field = getField(movementMode.value)
@@ -727,10 +965,10 @@ function step(ts) {
     p.x += vx; p.y += vy
 
     // toroidal wrap
-    if (p.x < 0) p.x += W
-    if (p.x >= W) p.x -= W
-    if (p.y < 0) p.y += H
-    if (p.y >= H) p.y -= H
+    if (p.x < 0) p.x += world.W
+    if (p.x >= world.W) p.x -= world.W
+    if (p.y < 0) p.y += world.H
+    if (p.y >= world.H) p.y -= world.H
 
     if (drawTrails.value) {
       strokeToroidal(oldX, oldY, p.x, p.y, p.size, rgbToCss(p.color, 0.85))
@@ -742,6 +980,8 @@ function step(ts) {
     }
   }
 
+  lightning.update() // draws lightning on top (additive blend)
+
   animationId = requestAnimationFrame(step)
 }
 
@@ -749,20 +989,20 @@ function step(ts) {
 function regenerate() {
   makeParticles()
   ctx.fillStyle = 'rgba(0,0,0,1)'
-  ctx.fillRect(0, 0, W, H)
+  ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
 }
 onMounted(() => {
   ctx = canvasEl.value.getContext('2d', { alpha: false })
   resizeCanvas()
   makeParticles()
   ctx.fillStyle = 'rgba(0,0,0,1)'
-  ctx.fillRect(0, 0, W, H)
+  ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
 
   window.addEventListener('resize', () => {
-    const prevW = W, prevH = H
+    const prevW = world.W, prevH = world.H
     resizeCanvas()
-    const sx = W / Math.max(1, prevW)
-    const sy = H / Math.max(1, prevH)
+    const sx = world.W / Math.max(1, prevW)
+    const sy = world.H / Math.max(1, prevH)
     for (const p of particles) {
       p.x *= sx; p.y *= sy
     }
@@ -772,6 +1012,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (animationId) cancelAnimationFrame(animationId)
+  lightning.dispose()
 })
 
 watch([minSize, maxSize], () => {
