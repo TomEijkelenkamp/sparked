@@ -127,6 +127,10 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     sparkAlphaMult: 1.9,
     loserAlphaMult: 0.45,
 
+    /* Corner filling */
+    cornerEnabled: true,           // add triangles at joints to fill gaps
+    cornerMiterLimit: 4.0,         // cap miter length as multiple of half-width
+
     /* Legacy single-control compatibility (optional) */
     renderMode: 'rect',
     lineCapStyle: 'butt',
@@ -385,6 +389,29 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     ctx.fillRect(-len / 2, -width / 2, len, width)
     ctx.restore()
   }
+  function edgeVisualState(b, e, tNow) {
+    // returns { alpha, width, colorRgb } matching current phase
+    let alpha = 0, width = 0, colorRgb = e.colorBaseRgb;
+    if (b.eventT === null || tNow < b.eventT) {
+      alpha = e.baseAlpha; width = e.baseWidth; colorRgb = e.colorBaseRgb;
+    } else {
+      const te = tNow - b.eventT;
+      if (te < cfg.sparkRiseMs) {
+        const k = Math.min(1, Math.max(0, te / cfg.sparkRiseMs));
+        alpha = e.baseAlpha + (e.peakAlpha - e.baseAlpha) * k;
+        width = e.baseWidth + (e.peakWidth - e.baseWidth) * k;
+      } else if (te < cfg.sparkRiseMs + cfg.sparkHoldMs) {
+        alpha = e.peakAlpha; width = e.peakWidth;
+      } else if (te < cfg.sparkRiseMs + cfg.sparkHoldMs + cfg.fadeMs) {
+        const k = Math.min(1, Math.max(0, (te - cfg.sparkRiseMs - cfg.sparkHoldMs) / cfg.fadeMs));
+        alpha = e.peakAlpha * (1 - k);
+        width = e.peakWidth * (1 - k);
+      } else { alpha = 0; width = 0; }
+      colorRgb = e.isWinner ? e.colorSparkWinRgb : e.colorSparkLoseRgb;
+    }
+    return { alpha, width, colorRgb };
+  }
+
   function drawSegmentCapsule(ctx, x1, y1, x2, y2, width, rgbaCss) {
     const dx = x2 - x1, dy = y2 - y1
     const len = Math.hypot(dx, dy) || 0.0001
@@ -408,6 +435,85 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     ctx.fill()
     ctx.restore()
   }
+  /* ----- corner helpers ----- */
+  function edgeVisualState(b, e, tNow) {
+    // Returns current {alpha, width, colorRgb}
+    let alpha = 0, width = 0, colorRgb = e.colorBaseRgb
+    if (b.eventT === null) {
+      // base phase (pre-spark)
+      alpha = e.baseAlpha
+      width = e.baseWidth
+      colorRgb = e.colorBaseRgb
+    } else if (tNow < b.eventT) {
+      alpha = e.baseAlpha
+      width = e.baseWidth
+      colorRgb = e.colorBaseRgb
+    } else {
+      const te = tNow - b.eventT
+      if (te < cfg.sparkRiseMs) {
+        const k = clamp01(te / cfg.sparkRiseMs)
+        alpha = lerp(e.baseAlpha, e.peakAlpha, k)
+        width = lerp(e.baseWidth, e.peakWidth, k)
+      } else if (te < cfg.sparkRiseMs + cfg.sparkHoldMs) {
+        alpha = e.peakAlpha
+        width = e.peakWidth
+      } else if (te < cfg.sparkRiseMs + cfg.sparkHoldMs + cfg.fadeMs) {
+        const k = clamp01((te - cfg.sparkRiseMs - cfg.sparkHoldMs) / cfg.fadeMs)
+        alpha = e.peakAlpha * (1 - k)
+        width = lerp(e.peakWidth, 0, k)
+      } else {
+        alpha = 0
+        width = 0
+      }
+      const isW = e.isWinner
+      colorRgb = isW ? e.colorSparkWinRgb : e.colorSparkLoseRgb
+    }
+    return { alpha, width, colorRgb }
+  }
+
+  function drawCornerDiamond(ctx, A, P, B, width, rgbaCss) {
+    // A = previous node, P = corner node, B = next node
+    const ax = A.x - H/2, ay = A.y - H/2;
+    const px = P.x - H/2, py = P.y - H/2;
+    const bx = B.x - H/2, by = B.y - H/2;
+
+    // direction vectors
+    let u1x = px - ax, u1y = py - ay;
+    let u2x = bx - px, u2y = by - py;
+    const l1 = Math.hypot(u1x, u1y);
+    const l2 = Math.hypot(u2x, u2y);
+    if (l1 < 1e-4 || l2 < 1e-4) return;
+
+    u1x /= l1; u1y /= l1;
+    u2x /= l2; u2y /= l2;
+
+    // compute which side is the inside of the bend
+    const cross = u1x * u2y - u1y * u2x;
+    const flip = cross < 0 ? -1 : 1;
+
+    // inward normals
+    const n1x = flip * (-u1y), n1y = flip * u1x;
+    const n2x = flip * (-u2y), n2y = flip * u2x;
+
+    const r = width / 2;
+
+    // points on both sides of each segment
+    const p1_in = { x: px + n1x * r, y: py + n1y * r };
+    const p2_in = { x: px + n2x * r, y: py + n2y * r };
+    const p1_out = { x: px - n1x * r, y: py - n1y * r };
+    const p2_out = { x: px - n2x * r, y: py - n2y * r };
+
+    // diamond shape: connect inner and outer corners
+    ctx.fillStyle = rgbaCss;
+    ctx.beginPath();
+    ctx.moveTo(p1_in.x, p1_in.y);
+    ctx.lineTo(p2_in.x, p2_in.y);
+    ctx.lineTo(p2_out.x, p2_out.y);
+    ctx.lineTo(p1_out.x, p1_out.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
 
   /* -------------------- draw bolt (from LIVE positions; losers first, winner last) -------------------- */
   function drawBolt(ctx, b) {
@@ -501,7 +607,32 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     drawList(losers)
     drawList(winners)
 
-    ctx.globalCompositeOperation = prevOp
+    
+    // --- corner fill at joints (per-branch) ---
+    if (cfg.cornerEnabled) {
+      for (const br of b.branches) {
+        const nodes = br.nodes
+        if (!nodes || nodes.length < 3) continue
+        for (let i=1;i<nodes.length-1;i++) {
+          const aIdx = nodes[i-1], pIdx = nodes[i], bIdx = nodes[i+1]
+          const e1 = b.edges.get(edgeKey(aIdx, pIdx))
+          const e2 = b.edges.get(edgeKey(pIdx, bIdx))
+          if (!e1 || !e2) continue
+          const s1 = edgeVisualState(b, e1, tNow)
+          const s2 = edgeVisualState(b, e2, tNow)
+          const alpha = Math.max(s1.alpha, s2.alpha)
+          if (alpha <= 0.001) continue
+          const width = Math.min(s1.width, s2.width)
+          if (width <= 0.01) continue
+          const colorRgb = (s1.alpha >= s2.alpha) ? s1.colorRgb : s2.colorRgb
+          const col = rgbCss(colorRgb, alpha)
+          const A = particles[aIdx], P = particles[pIdx], B = particles[bIdx]
+          if (!A || !P || !B) continue
+          drawCornerDiamond(ctx, A, P, B, width, col);
+        }
+      }
+    }
+ctx.globalCompositeOperation = prevOp
     ctx.lineCap  = prevCap
     ctx.lineJoin = prevJoin
 
