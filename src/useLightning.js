@@ -30,6 +30,23 @@ function hsvToRgb(h, s, v) {
 }
 const rgbCss = ({r,g,b}, a=1) => `rgba(${r},${g},${b},${a})`
 
+// ----- toroidal helpers -----
+  function torusDelta(d, size) {
+    if (d >  size / 2) return d - size
+    if (d < -size / 2) return d + size
+    return d
+  }
+
+  // Adjust the *start* point so the direct vector to (x2,y2) is the shortest across wrap
+  function torusAdjustStart(x1, y1, x2, y2, W, H) {
+    let ax = x1, ay = y1
+    const dx = x2 - ax
+    const dy = y2 - ay
+    if (dx >  W / 2) ax += W; else if (dx < -W / 2) ax -= W
+    if (dy >  H / 2) ay += H; else if (dy < -H / 2) ay -= H
+    return [ax, ay]
+  }
+
 /* -------------------- spatial hash -------------------- */
 function makeSpatialHash(particles, cellSize) {
   const inv = 1 / Math.max(1, cellSize)
@@ -44,7 +61,7 @@ function makeSpatialHash(particles, cellSize) {
     if (!bucket) { bucket = []; grid.set(k, bucket) }
     bucket.push(i)
   }
-  function kNearest(x, y, kWanted, maxDist) {
+  function kNearest(x, y, kWanted, maxDist, W, H) {
     const gx = Math.floor(x * inv)
     const gy = Math.floor(y * inv)
     const maxRing = Math.ceil(maxDist * inv) + 1
@@ -54,8 +71,8 @@ function makeSpatialHash(particles, cellSize) {
       if (!bucket) return
       for (const idx of bucket) {
         const pt = particles[idx]
-        const dx = pt.x - x
-        const dy = pt.y - y
+        const dx = torusDelta(pt.x - x, W)
+        const dy = torusDelta(pt.y - y, H)
         const d2 = dx*dx + dy*dy
         if (d2 <= maxDist*maxDist) candidates.push({ idx, d2 })
       }
@@ -108,7 +125,7 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     renderModeSparkLose: 'rect',
     lineCapSpark:    'butt',
 
-    lineWidth: 10.0,
+    lineWidth: 20.0,
     preAlpha: 0.7,
 
     // Colors (HSV) for base and spark phases
@@ -122,8 +139,8 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     widthNoisePct: 0,                      // ±% around lineWidth (0..1)
 
     /* Winner vs others multipliers at spark */
-    sparkWidthMult: 4.6,
-    loserWidthMult: 0.25,
+    sparkWidthMult: 2.6,
+    loserWidthMult: 0.50,
     sparkAlphaMult: 1.9,
     loserAlphaMult: 0.45,
 
@@ -200,7 +217,7 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     const startIdx = starters[(Math.random()*starters.length)|0]
 
     const hash = makeSpatialHash(particles, Math.max(32, cfg.maxStepDist))
-    const kNear = (x,y) => hash.kNearest(x,y, 128, cfg.maxStepDist)
+    const kNear = (x,y) => hash.kNearest(x,y, 128, cfg.maxStepDist, W, H)
 
     const b = {
       edges: new Map(),
@@ -249,6 +266,8 @@ export function useLightning({ getCtx, getSize, getParticles }) {
       if (avoidSet && avoidSet.has(idx)) continue
       const pt = particles[idx]
       if (pt.x <= tip.x) continue
+      const dxWrapped = torusDelta(pt.x - tip.x, W)
+      if (dxWrapped <= 0) continue
       return idx
     }
     return null
@@ -368,6 +387,7 @@ export function useLightning({ getCtx, getSize, getParticles }) {
   }
 
   /* -------------------- drawing helpers (solid) -------------------- */
+
   function drawSegmentStroke(ctx, x1, y1, x2, y2, width, rgbaCss) {
     ctx.lineWidth = width
     ctx.strokeStyle = rgbaCss
@@ -376,19 +396,49 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     ctx.lineTo(x2, y2)
     ctx.stroke()
   }
+
   function drawSegmentRect(ctx, x1, y1, x2, y2, width, rgbaCss) {
-    const dx = x2 - x1, dy = y2 - y1
-    const len = Math.hypot(dx, dy) || 0.0001
-    const ang = Math.atan2(dy, dx)
-    const cx = (x1 + x2) * 0.5
-    const cy = (y1 + y2) * 0.5
-    ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate(ang)
-    ctx.fillStyle = rgbaCss
-    ctx.fillRect(-len / 2, -width / 2, len, width)
-    ctx.restore()
+    // Use shortest path on the torus by shifting the start point near the end
+    let [ax, ay] = torusAdjustStart(x1, y1, x2, y2, W, H)
+
+    const drawOne = (X1, Y1, X2, Y2) => {
+      const dx = X2 - X1, dy = Y2 - Y1
+      const len = Math.hypot(dx, dy) || 1e-6
+      const ang = Math.atan2(dy, dx)
+      const cx = (X1 + X2) * 0.5
+      const cy = (Y1 + Y2) * 0.5
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.rotate(ang)
+      ctx.fillStyle = rgbaCss
+      ctx.fillRect(-len / 2, -width / 2, len, width)
+      ctx.restore()
+    }
+
+    // main draw
+    drawOne(ax, ay, x2, y2)
+
+    // duplicate across seams if the aligned start fell outside,
+    // so the segment renders seamlessly on both sides
+    if (ax < 0)          drawOne(ax + W, ay, x2 + W, y2)
+    else if (ax >= W)    drawOne(ax - W, ay, x2 - W, y2)
+    if (ay < 0)          drawOne(ax, ay + H, x2, y2 + H)
+    else if (ay >= H)    drawOne(ax, ay - H, x2, y2 - H)
   }
+
+  // function drawSegmentRect(ctx, x1, y1, x2, y2, width, rgbaCss) {
+  //   const dx = x2 - x1, dy = y2 - y1
+  //   const len = Math.hypot(dx, dy) || 0.0001
+  //   const ang = Math.atan2(dy, dx)
+  //   const cx = (x1 + x2) * 0.5
+  //   const cy = (y1 + y2) * 0.5
+  //   ctx.save()
+  //   ctx.translate(cx, cy)
+  //   ctx.rotate(ang)
+  //   ctx.fillStyle = rgbaCss
+  //   ctx.fillRect(-len / 2, -width / 2, len, width)
+  //   ctx.restore()
+  // }
   function edgeVisualState(b, e, tNow) {
     // returns { alpha, width, colorRgb } matching current phase
     let alpha = 0, width = 0, colorRgb = e.colorBaseRgb;
@@ -411,6 +461,41 @@ export function useLightning({ getCtx, getSize, getParticles }) {
     }
     return { alpha, width, colorRgb };
   }
+
+  function drawSegmentCapsuleToroidal(ctx, x1, y1, x2, y2, width, rgbaCss) {
+    // 1) choose shortest toroidal path by shifting the start point
+    let [ax, ay] = torusAdjustStart(x1, y1, x2, y2, W, H)
+    const dx = x2 - ax
+    const dy = y2 - ay
+    const len = Math.hypot(dx, dy)
+    if (len < 1e-6 || width <= 0) return
+
+    // single draw (main copy)
+    drawOne(ax, ay, x2, y2)
+
+    // 2) duplicate if we started outside bounds, like strokeToroidal does
+    if (ax < 0)          drawOne(ax + W, ay, x2 + W, y2)
+    else if (ax >= W)    drawOne(ax - W, ay, x2 - W, y2)
+    if (ay < 0)          drawOne(ax, ay + H, x2, y2 + H)
+    else if (ay >= H)    drawOne(ax, ay - H, x2, y2 - H)
+
+    function drawOne(sx, sy, ex, ey) {
+      const ddx = ex - sx, ddy = ey - sy
+      const L = Math.hypot(ddx, ddy)
+      if (L < 1e-6) return
+      const ang = Math.atan2(ddy, ddx)
+
+      ctx.save()
+      // your renderer subtracts view offset ~H/2; keep that consistent:
+      ctx.translate((sx + ex) / 2 - H/2, (sy + ey) / 2 - H/2)
+      ctx.rotate(ang)
+      ctx.fillStyle = rgbaCss
+      // rectangle “capsule” (if you have rounded ends elsewhere, keep that style)
+      ctx.fillRect(-L / 2, -width / 2, L, width)
+      ctx.restore()
+    }
+  }
+
 
   function drawSegmentCapsule(ctx, x1, y1, x2, y2, width, rgbaCss) {
     const dx = x2 - x1, dy = y2 - y1
@@ -595,7 +680,7 @@ export function useLightning({ getCtx, getSize, getParticles }) {
         if (mode === 'rect') {
           drawSegmentRect(ctx, x1, y1, x2, y2, width, col)
         } else if (mode === 'capsule') {
-          drawSegmentCapsule(ctx, x1, y1, x2, y2, width, col)
+          drawSegmentCapsuleToroidal(ctx, x1, y1, x2, y2, width, color)
         } else {
           ctx.lineCap = cap
           drawSegmentStroke(ctx, x1, y1, x2, y2, width, col)

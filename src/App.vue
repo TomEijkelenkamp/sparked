@@ -23,7 +23,7 @@
         </div>
         <div class="row">
           <label>Max size: <strong>{{ maxSize.toFixed(1) }}</strong> px</label>
-          <input type="range" min="0.5" max="20" step="0.1" v-model.number="maxSize" />
+          <input type="range" min="0.5" max="50" step="0.1" v-model.number="maxSize" />
         </div>
         <div class="row">
           <label>Min speed: <strong>{{ minSpeed.toFixed(0) }}</strong> px/s</label>
@@ -82,6 +82,23 @@
           <input type="range" min="0" max="0.5" step="0.01" v-model.number="colorJitter" />
         </div>
         <button class="btn" @click="recolor">Recolor</button>
+
+        <div class="hsv-block">
+          <div class="hsv-header">
+            <span>Value Range</span>
+            <!-- preview swatch uses current hue/sat with max value -->
+            <span class="swatch" :style="{ background: hsvToCss({ h: hsvEnd.h, s: hsvEnd.s, v: valueMax }) }"></span>
+          </div>
+          <div class="row">
+            <label>V min: <strong>{{ valueMin }}</strong>%</label>
+            <input type="range" min="0" max="100" step="1" v-model.number="valueMin" />
+          </div>
+          <div class="row">
+            <label>V max: <strong>{{ valueMax }}</strong>%</label>
+            <input type="range" min="0" max="100" step="1" v-model.number="valueMax" />
+          </div>
+        </div>
+
       </section>
 
       <section class="control-group">
@@ -157,7 +174,7 @@
 
         <div class="row">
           <label>Core width</label>
-          <input type="range" min="0.5" max="8" step="0.1" v-model.number="lightning.cfg.lineWidth" />
+          <input type="range" min="0.5" max="20" step="0.1" v-model.number="lightning.cfg.lineWidth" />
         </div>
         <div class="row">
           <label>Core alpha</label>
@@ -382,6 +399,8 @@ const maxSpeed = ref(100)
 const hsvStart = reactive({ h: 200, s: 80, v: 90 })
 const hsvEnd   = reactive({ h: 320, s: 80, v: 90 })
 const colorJitter = ref(0.1)
+const valueMin = ref(60)
+const valueMax = ref(100)
 
 const trailFade = ref(0.04)
 const drawTrails = ref(true)
@@ -492,6 +511,7 @@ function makeParticles() {
     const speed = rand(minSpeed.value, maxSpeed.value)
     const t = clamp01((i / (n - 1 || 1)) + rand(-colorJitter.value, colorJitter.value))
     const hsv = lerpHSV(hsvStart, hsvEnd, clamp01(t))
+    hsv.v = Math.max(0, Math.min(100, rand(valueMin.value, valueMax.value)))
     const color = hsvToRgb(hsv.h, hsv.s, hsv.v)
 
     particles.push({
@@ -508,6 +528,7 @@ function recolor() {
     const t = clamp01((i / (particles.length - 1 || 1)) + rand(-colorJitter.value, colorJitter.value))
     p.hsvT = t
     const hsv = lerpHSV(hsvStart, hsvEnd, clamp01(t))
+    hsv.v = Math.max(0, Math.min(100, rand(valueMin.value, valueMax.value)))
     p.color = hsvToRgb(hsv.h, hsv.s, hsv.v)
   }
 }
@@ -1020,6 +1041,11 @@ watch([minSize, maxSize], () => {
 })
 watch([minSpeed, maxSpeed], () => {
   if (minSpeed.value > maxSpeed.value) [minSpeed.value, maxSpeed.value] = [maxSpeed.value, minSpeed.value]
+})
+watch([valueMin, valueMax], () => {
+  if (valueMin.value > valueMax.value) {
+    [valueMin.value, valueMax.value] = [valueMax.value, valueMin.value]
+  }
 })
 </script>
 
