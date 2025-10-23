@@ -1,1162 +1,913 @@
 <template>
-  <div class="app">
-    <aside class="controls">
-      <h2>Particle Flow</h2>
+  <div class="panel">
+  <h2>Particles</h2>
 
-      <section class="control-group">
-        <h3>Movement</h3>
-        <label v-for="m in modes" :key="m.value">
-          <input type="radio" :value="m.value" v-model="movementMode" />
-          {{ m.label }}
-        </label>
-      </section>
+  <label>Field
+    <select v-model="movementMode">
+      <option value="sineflow">Sine Flow</option>
+      <option value="swirl">Swirl</option>
+      <option value="curlish">Curlish</option>
+      <option value="lissajous">Lissajous</option>
+      <option value="orbits">Orbits</option>
+      <option value="vortexgrid">Vortex Grid</option>
+      <option value="doublegyre">Double Gyre</option>
+      <option value="shear">Shear</option>
+      <option value="hexvortex">Hex Vortex</option>
+      <option value="jetstream">Jet Stream</option>
+      <option value="galactic">Galactic</option>
+      <option value="cellular">Cellular</option>
+    </select>
+  </label>
 
-      <section class="control-group">
-        <h3>Particles</h3>
-        <div class="row">
-          <label>Count: <strong>{{ particleCount }}</strong></label>
-          <input type="range" min="100" max="6000" step="50" v-model.number="particleCount" />
-        </div>
-        <div class="row">
-          <label>Min size: <strong>{{ minSize.toFixed(1) }}</strong> px</label>
-          <input type="range" min="0.5" max="6" step="0.1" v-model.number="minSize" />
-        </div>
-        <div class="row">
-          <label>Max size: <strong>{{ maxSize.toFixed(1) }}</strong> px</label>
-          <input type="range" min="0.5" max="50" step="0.1" v-model.number="maxSize" />
-        </div>
-        <div class="row">
-          <label>Min speed: <strong>{{ minSpeed.toFixed(0) }}</strong> px/s</label>
-          <input type="range" min="5" max="200" step="1" v-model.number="minSpeed" />
-        </div>
-        <div class="row">
-          <label>Max speed: <strong>{{ maxSpeed.toFixed(0) }}</strong> px/s</label>
-          <input type="range" min="5" max="400" step="1" v-model.number="maxSpeed" />
-        </div>
-        <button class="btn" @click="regenerate">Regenerate</button>
-      </section>
+  <label>Simulation speed: {{ fmt(simSpeed,2) }}×
+    <input type="range" min="0" max="4" step="0.01" v-model.number="simSpeed" />
+  </label>
 
-      <section class="control-group">
-        <h3>Color Range (HSV)</h3>
+  <label>Fade: {{ fmt(trailFade,2) }}
+    <input type="range" min="0" max="0.4" step="0.005" v-model.number="trailFade" />
+  </label>
 
-        <div class="hsv-block">
-          <div class="hsv-header">
-            <span>Start</span>
-            <span class="swatch" :style="{ background: hsvToCss(hsvStart) }"></span>
-          </div>
-          <div class="row">
-            <label>H: <strong>{{ hsvStart.h }}</strong>°</label>
-            <input type="range" min="0" max="360" step="1" v-model.number="hsvStart.h" />
-          </div>
-          <div class="row">
-            <label>S: <strong>{{ hsvStart.s }}</strong>%</label>
-            <input type="range" min="0" max="100" step="1" v-model.number="hsvStart.s" />
-          </div>
-          <div class="row">
-            <label>V: <strong>{{ hsvStart.v }}</strong>%</label>
-            <input type="range" min="0" max="100" step="1" v-model.number="hsvStart.v" />
-          </div>
-        </div>
+  <label>Active particles: {{ activeCount }}
+    <input type="range" :min="1" :max="maxParticles" step="1" v-model.number="activeCount" />
+  </label>
 
-        <div class="hsv-block">
-          <div class="hsv-header">
-            <span>End</span>
-            <span class="swatch" :style="{ background: hsvToCss(hsvEnd) }"></span>
-          </div>
-          <div class="row">
-            <label>H: <strong>{{ hsvEnd.h }}</strong>°</label>
-            <input type="range" min="0" max="360" step="1" v-model.number="hsvEnd.h" />
-          </div>
-          <div class="row">
-            <label>S: <strong>{{ hsvEnd.s }}</strong>%</label>
-            <input type="range" min="0" max="100" step="1" v-model.number="hsvEnd.s" />
-          </div>
-          <div class="row">
-            <label>V: <strong>{{ hsvEnd.v }}</strong>%</label>
-            <input type="range" min="0" max="100" step="1" v-model.number="hsvEnd.v" />
-          </div>
-        </div>
+  <label>Point scale: {{ fmt(pointScale,2) }}
+    <input type="range" min="0.2" max="25" step="0.05" v-model.number="pointScale" />
+  </label>
 
-        <div class="row">
-          <label>Color jitter: <strong>{{ colorJitter.toFixed(2) }}</strong></label>
-          <input type="range" min="0" max="0.5" step="0.01" v-model.number="colorJitter" />
-        </div>
-        <button class="btn" @click="recolor">Recolor</button>
+  <div class="row">
+    <div><h2>Particle Colors</h2></div>
+    <div>
+      <label>Color A</label>
+      <label>H
+        <input type="range" min="0" max="1" step="0.001" v-model.number="hsvStart.h" />
+      </label>
 
-        <div class="hsv-block">
-          <div class="hsv-header">
-            <span>Value Range</span>
-            <!-- preview swatch uses current hue/sat with max value -->
-            <span class="swatch" :style="{ background: hsvToCss({ h: hsvEnd.h, s: hsvEnd.s, v: valueMax }) }"></span>
-          </div>
-          <div class="row">
-            <label>V min: <strong>{{ valueMin }}</strong>%</label>
-            <input type="range" min="0" max="100" step="1" v-model.number="valueMin" />
-          </div>
-          <div class="row">
-            <label>V max: <strong>{{ valueMax }}</strong>%</label>
-            <input type="range" min="0" max="100" step="1" v-model.number="valueMax" />
-          </div>
-        </div>
+      <label>S
+        <input type="range" min="0" max="1" step="0.001" v-model.number="hsvStart.s" />
+      </label>
 
-      </section>
+      <label>V
+        <input type="range" min="0" max="1" step="0.001" v-model.number="hsvStart.v" />
+      </label>
+    </div>
+    <div>
+      <label>Color B</label>
+      <label>H
+        <input type="range" min="0" max="1" step="0.001" v-model.number="hsvEnd.h" />
+      </label>
 
-      <section class="control-group">
-        <h3>Display</h3>
-        <div class="row">
-          <label>Trail fade: <strong>{{ (trailFade*100)|0 }}%</strong></label>
-          <input type="range" min="0" max="0.2" step="0.005" v-model.number="trailFade" />
-        </div>
-        <div class="row">
-          <label>Line mode</label>
-          <input type="checkbox" v-model="drawTrails" />
-        </div>
-      </section>
+      <label>S
+        <input type="range" min="0" max="1" step="0.001" v-model.number="hsvEnd.s" />
+      </label>
 
-      <section class="control-group">
-        <h3>Lightning</h3>
+      <label>V
+        <input type="range" min="0" max="1" step="0.001" v-model.number="hsvEnd.v" />
+      </label>
+    </div>
 
-        <div class="row">
-          <label>Enable</label>
-          <input type="checkbox" v-model="lightning.cfg.enabled" />
-        </div>
+  </div>
 
-        <div class="row">
-          <label>Spawn delay (ms)</label>
-          <input type="range" min="0" max="3000" step="50" v-model.number="lightning.cfg.initialDelayMs" />
-        </div>
-        <div class="row">
-          <label>Interval (ms)</label>
-          <input type="range" min="200" max="5000" step="50" v-model.number="lightning.cfg.intervalMs" />
-        </div>
-        <div class="row">
-          <label>Hop delay (ms)</label>
-          <input type="range" min="0" max="400" step="5" v-model.number="lightning.cfg.hopDelayMs" />
-        </div>
+  <div class="bar big" :style="{ background: `linear-gradient(90deg, ${cssStart}, ${cssEnd})` }"></div>
+</div>
 
-        <div class="row">
-          <label>Left column (px)</label>
-          <input type="range" min="10" max="400" step="2" v-model.number="lightning.cfg.leftColWidth" />
-        </div>
-        <div class="row">
-          <label>Right column (px)</label>
-          <input type="range" min="10" max="400" step="2" v-model.number="lightning.cfg.rightColWidth" />
-        </div>
-        <div class="row">
-          <label>Max hop dist (px)</label>
-          <input type="range" min="20" max="400" step="2" v-model.number="lightning.cfg.maxStepDist" />
-        </div>
-        <div class="row">
-          <label>Max steps/branch</label>
-          <input type="range" min="5" max="200" step="1" v-model.number="lightning.cfg.maxStepsPerBranch" />
-        </div>
-        <div class="row">
-          <label>Split chance</label>
-          <input type="range" min="0" max="1" step="0.01" v-model.number="lightning.cfg.splitChance" />
-        </div>
-
-        <div class="row">
-          <label>Hue</label>
-          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvBase.h" />
-        </div>
-        <div class="row">
-          <label>Sat</label>
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.s" />
-        </div>
-        <div class="row">
-          <label>Val</label>
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.v" />
-        </div>
-        <div class="row">
-          <label>Preview</label>
-          <div :style="{width:'28px',height:'16px',borderRadius:'6px',border:'1px solid #555', background: lightning.colorPreview}"></div>
-        </div>
-
-        <div class="row">
-          <label>Core width</label>
-          <input type="range" min="0.5" max="20" step="0.1" v-model.number="lightning.cfg.lineWidth" />
-        </div>
-        <div class="row">
-          <label>Core alpha</label>
-          <input type="range" min="0.05" max="1" step="0.01" v-model.number="lightning.cfg.preAlpha" />
-        </div>
-
-        <!-- Feather/halo controls -->
-        <div class="row">
-          <label>Halo width ×</label>
-          <input type="range" min="0" max="4" step="0.05" v-model.number="lightning.cfg.haloWidthMult" />
-        </div>
-        <div class="row">
-          <label>Halo alpha ×</label>
-          <input type="range" min="0" max="1" step="0.02" v-model.number="lightning.cfg.haloAlphaMult" />
-        </div>
-        <div class="row">
-          <label>Halo blur</label>
-          <input type="range" min="0" max="30" step="1" v-model.number="lightning.cfg.haloBlur" />
-        </div>
-
-        <!-- Spark-up timings -->
-        <div class="row">
-          <label>Rise (ms)</label>
-          <input type="range" min="10" max="600" step="5" v-model.number="lightning.cfg.riseMs" />
-        </div>
-        <div class="row">
-          <label>Spark rise (ms)</label>
-          <input type="range" min="10" max="600" step="5" v-model.number="lightning.cfg.sparkRiseMs" />
-        </div>
-        <div class="row">
-          <label>Spark hold (ms)</label>
-          <input type="range" min="50" max="2000" step="10" v-model.number="lightning.cfg.sparkHoldMs" />
-        </div>
-        <div class="row">
-          <label>Fade (ms)</label>
-          <input type="range" min="50" max="4000" step="10" v-model.number="lightning.cfg.fadeMs" />
-        </div>
-        <div class="row">
-          <label>No-win delay (ms)</label>
-          <input type="range" min="0" max="2000" step="10" v-model.number="lightning.cfg.noWinDelayMs" />
-        </div>
-
-        <!-- Winner vs others -->
-        <div class="row">
-          <label>Win width ×</label>
-          <input type="range" min="1" max="6" step="0.05" v-model.number="lightning.cfg.sparkWidthMult" />
-        </div>
-        <div class="row">
-          <label>Lose width ×</label>
-          <input type="range" min="0.1" max="2" step="0.05" v-model.number="lightning.cfg.loserWidthMult" />
-        </div>
-        <div class="row">
-          <label>Win alpha ×</label>
-          <input type="range" min="1" max="4" step="0.05" v-model.number="lightning.cfg.sparkAlphaMult" />
-        </div>
-        <div class="row">
-          <label>Lose alpha ×</label>
-          <input type="range" min="0.05" max="1" step="0.05" v-model.number="lightning.cfg.loserAlphaMult" />
-        </div>
-
-        <div class="row">
-          <label>Color noise H (±°)</label>
-          <input type="range" min="0" max="180" step="1" v-model.number="lightning.cfg.colorNoiseH" />
-        </div>
-        <div class="row">
-          <label>Color noise S (±)</label>
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseS" />
-        </div>
-        <div class="row">
-          <label>Color noise V (±)</label>
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseV" />
-        </div>
-        <div class="row">
-          <label>Width noise (±%)</label>
-          <input type="range" min="0" max="1" step="0.01" v-model.number="lightning.cfg.widthNoisePct" />
-        </div>
-
-        <!-- Base phase -->
-        <div class="row">
-          <label>Base form</label>
-          <select v-model="lightning.cfg.renderModeBase">
-            <option value="stroke">Stroke</option><option value="rect">Rect</option><option value="capsule">Capsule</option>
-          </select>
-        </div>
-        <div class="row" v-if="lightning.cfg.renderModeBase==='stroke'">
-          <label>Base line cap</label>
-          <select v-model="lightning.cfg.lineCapBase">
-            <option>butt</option><option>round</option><option>square</option>
-          </select>
-        </div>
-
-        <!-- Spark phase -->
-        <div class="row">
-          <label>Spark winner form</label>
-          <select v-model="lightning.cfg.renderModeSparkWin">
-            <option value="stroke">Stroke</option><option value="rect">Rect</option><option value="capsule">Capsule</option>
-          </select>
-        </div>
-        <div class="row">
-          <label>Spark loser form</label>
-          <select v-model="lightning.cfg.renderModeSparkLose">
-            <option value="stroke">Stroke</option><option value="rect">Rect</option><option value="capsule">Capsule</option>
-          </select>
-        </div>
-        <div class="row" v-if="lightning.cfg.renderModeSparkWin==='stroke' || lightning.cfg.renderModeSparkLose==='stroke'">
-          <label>Spark line cap</label>
-          <select v-model="lightning.cfg.lineCapSpark">
-            <option>butt</option><option>round</option><option>square</option>
-          </select>
-        </div>
-
-        <!-- Colors with previews -->
-        <div class="row">
-          <label>Base HSV</label>
-          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvBase.h">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.s">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvBase.v">
-          <div :style="{width:'28px',height:'16px',border:'1px solid #555',borderRadius:'6px',background: lightning.colorPreviewBase}"></div>
-        </div>
-        <div class="row">
-          <label>Spark WIN HSV</label>
-          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvSparkWin.h">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkWin.s">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkWin.v">
-          <div :style="{width:'28px',height:'16px',border:'1px solid #555',borderRadius:'6px',background: lightning.colorPreviewWin}"></div>
-        </div>
-        <div class="row">
-          <label>Spark LOSE HSV</label>
-          <input type="range" min="0" max="360" step="1" v-model.number="lightning.cfg.hsvSparkLose.h">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkLose.s">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.hsvSparkLose.v">
-          <div :style="{width:'28px',height:'16px',border:'1px solid #555',borderRadius:'6px',background: lightning.colorPreviewLose}"></div>
-        </div>
-
-        <!-- Noise -->
-        <div class="row">
-          <label>Base color noise (±H/S/V)</label>
-          <input type="range" min="0" max="180" step="1" v-model.number="lightning.cfg.colorNoiseBase.h">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseBase.s">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseBase.v">
-        </div>
-        <div class="row">
-          <label>Spark color noise (±H/S/V)</label>
-          <input type="range" min="0" max="180" step="1" v-model.number="lightning.cfg.colorNoiseSpark.h">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseSpark.s">
-          <input type="range" min="0" max="100" step="1" v-model.number="lightning.cfg.colorNoiseSpark.v">
-        </div>
-        <div class="row">
-          <label>Width noise (±%)</label>
-          <input type="range" min="0" max="1" step="0.01" v-model.number="lightning.cfg.widthNoisePct">
-        </div>
-
-
-        <button class="btn" @click="lightning.spawnNow()">Spawn now</button>
-      </section>
-
-    </aside>
-
-    <main class="stage">
-      <canvas ref="canvasEl"></canvas>
-    </main>
+  <div class="stage full-bleed-stage">
+    <!-- three.js renderer draws here -->
+    <canvas ref="glCanvas" class="layer"></canvas>
+    <!-- 2D lightning overlay -->
+    <canvas ref="fxCanvas" class="layer overlay"></canvas>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref, reactive, watch } from 'vue'
-import { useLightning } from './useLightning.js'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
+import * as LightningMod from './useLightning.js'
 
-/* ----------------------- Reactive controls ----------------------- */
-const modes = [
-  // existing base
-  { value: 'brownian',   label: 'Brownian drift' },
-  { value: 'sineflow',   label: 'Sine flow field' },
-  { value: 'swirl',      label: 'Swirl around center' },
-  { value: 'curlish',    label: 'Curl-like field' },
-  { value: 'perlinish',  label: 'Perlin-ish noise' },
-  { value: 'lissajous',  label: 'Lissajous field' },
-  { value: 'orbits',     label: 'Orbiting hubs' },
-  { value: 'multiwell',  label: 'Multi-attractor wells' },
-  { value: 'vortexgrid', label: 'Vortex grid' },
-  // previous +10
-  { value: 'doublegyre',    label: 'Double gyre' },
-  { value: 'shear',         label: 'Shear + meander' },
-  { value: 'spiralwave',    label: 'Spiral wave' },
-  { value: 'hexvortex',     label: 'Hex vortex lattice' },
-  { value: 'lemniscate',    label: 'Bi-focal lemniscate' },
-  { value: 'saddle',        label: 'Saddle flow' },
-  { value: 'noisecurl',     label: 'Noise curl' },
-  { value: 'jetstream',     label: 'Jet streams' },
-  { value: 'galactic',      label: 'Galactic rotation' },
-  { value: 'quasiperiodic', label: 'Quasi-periodic swirl' },
-  // NEW +20
-  { value: 'cellular',      label: 'Cellular sin×sin' },
-  { value: 'catseye',       label: 'Kelvin–Helmholtz eyes' },
-  { value: 'doublehelix',   label: 'Double helix lanes' },
-  { value: 'mexicanring',   label: 'Mexican-hat ring' },
-  { value: 'spiraltiles',   label: 'Tiled spirals' },
-  { value: 'noisyswirl',    label: 'Swirl + noise' },
-  { value: 'dipole',        label: 'Vortex dipole' },
-  { value: 'quadrupole',    label: 'Vortex quadrupole' },
-  { value: 'threebody',     label: 'Three-body swirls' },
-  { value: 'slinky',        label: 'Traveling slinky' },
-  { value: 'rantiles',      label: 'Random curl tiles' },
-  { value: 'rose5',         label: 'Five-petal rose' },
-  { value: 'barberpole',    label: 'Barber pole bands' },
-  { value: 'polarjets',     label: 'Polar jets ring' },
-  { value: 'crystal',       label: 'Diamond vortices' },
-  { value: 'starfan',       label: 'Star fan' },
-  { value: 'sunburst',      label: 'Breathing radial' },
-  { value: 'latticewaves',  label: 'Lattice waves' },
-  { value: 'bendfold',      label: 'Bend & fold' },
-  { value: 'lognoise',      label: 'Log-spiral + noise' },
-]
-const movementMode = ref('sineflow')
+// accept default or named export
+const useLightning = LightningMod.default || LightningMod.useLightning || null
 
-const particleCount = ref(3000)
-const minSize = ref(6.0)
-const maxSize = ref(20.0)
-const minSpeed = ref(30)
-const maxSpeed = ref(100)
+// ───────────────── helpers ─────────────────
+const fmt = (v, d = 1) => Number((v && v.value !== undefined ? v.value : v) ?? 0).toFixed(d)
 
-const hsvStart = reactive({ h: 200, s: 80, v: 90 })
-const hsvEnd   = reactive({ h: 320, s: 80, v: 90 })
-const colorJitter = ref(0.1)
-const valueMin = ref(60)
-const valueMax = ref(100)
-
-const trailFade = ref(0.04)
-const drawTrails = ref(true)
-
-/* ----------------------- Canvas & particles ----------------------- */
-const canvasEl = ref(null)
-let ctx = null
-let animationId = null
-let lastT = 0
-
-let W = 0, H = 0, DPR = Math.min(2, window.devicePixelRatio || 1)
-let view = {
-  W, H, DPR
-}
-let world = {
-  W, H,
-}
-view.W = 0; view.H = 0, DPR = Math.min(2, window.devicePixelRatio || 1)
-world.W = view.W + view.H
-world.H = view.H + view.H
-
-const particles = [] // {x,y,prevX,prevY,speed,size,hsvT,color,angle,tag}
-
-const lightning = useLightning({
-  getCtx: () => ctx,
-  getSize: () => ({ W, H }),
-  getParticles: () => particles,
-})
-
-/* ---------- utils ---------- */
-function resizeCanvas() {
-  const el = canvasEl.value
-  if (!el) return
-  view.W = el.clientWidth
-  view.H = el.clientHeight
-  el.width = Math.floor(view.W * DPR)
-  el.height = Math.floor(view.H * DPR)
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
-  lightning.setSize(view.W, view.H)
-  world.W = view.W + view.H
-  world.H = view.H + view.H
-}
-function rand(min, max) { return min + Math.random() * (max - min) }
-function clamp01(x) { return Math.max(0, Math.min(1, x)) }
-function norm(x,y){ const m=Math.hypot(x,y)||1; return {x:x/m,y:y/m} }
-
-/* HSV <-> RGB utilities */
 function hsvToRgb(h, s, v) {
-  h = ((h % 360) + 360) % 360
-  s /= 100; v /= 100
-  const c = v * s
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
-  const m = v - c
-  let r=0,g=0,b=0
-  if (0 <= h && h < 60)  { r=c; g=x; b=0 }
-  else if (60 <= h && h < 120) { r=x; g=c; b=0 }
-  else if (120 <= h && h < 180){ r=0; g=c; b=x }
-  else if (180 <= h && h < 240){ r=0; g=x; b=c }
-  else if (240 <= h && h < 300){ r=x; g=0; b=c }
-  else { r=c; g=0; b=x }
-  return { r: Math.round((r+m)*255), g: Math.round((g+m)*255), b: Math.round((b+m)*255) }
-}
-function rgbToCss({r,g,b}, a=1) { return `rgba(${r},${g},${b},${a})` }
-function hsvToCss(hsv, a=1) { return rgbToCss(hsvToRgb(hsv.h, hsv.s, hsv.v), a) }
-function lerp(a, b, t) { return a + (b - a) * t }
-function lerpHSV(a, b, t) {
-  let dh = ((b.h - a.h + 540) % 360) - 180
-  return { h: (a.h + dh * t + 360) % 360, s: lerp(a.s, b.s, t), v: lerp(a.v, b.v, t) }
-}
-
-/* --- noise helpers --- */
-function hash(x, y, z) { return Math.sin(x*12.9898 + y*78.233 + z*37.719) * 43758.5453 }
-function fract(x){ return x - Math.floor(x) }
-function noiseBilinear(X, Y, Z) {
-  const x0 = Math.floor(X), y0 = Math.floor(Y)
-  const tx = X - x0, ty = Y - y0
-  const n00 = fract(hash(x0,   y0,   Z))
-  const n10 = fract(hash(x0+1, y0,   Z))
-  const n01 = fract(hash(x0,   y0+1, Z))
-  const n11 = fract(hash(x0+1, y0+1, Z))
-  const nx0 = n00*(1-tx) + n10*tx
-  const nx1 = n01*(1-tx) + n11*tx
-  return nx0*(1-ty) + nx1*ty
-}
-function noiseAngle(x, y, t) {
-  const s = 0.002, tt = t * 0.0002
-  const n = noiseBilinear(x*s, y*s, tt)
-  return n * Math.PI * 2
-}
-
-/* ---------- particles ---------- */
-function makeParticles() {
-  particles.length = 0
-  const n = particleCount.value
-  const aspect = (world.W) / Math.max(1, (world.H))
-  const cols = Math.ceil(Math.sqrt(n * aspect))
-  const rows = Math.ceil(n / cols)
-  const gx = world.W / cols
-  const gy = world.H / rows
-
-  for (let i = 0; i < n; i++) {
-    const c = i % cols
-    const r = Math.floor(i / cols)
-    const x = (c + 0.5) * gx + rand(-0.45, 0.45) * gx
-    const y = (r + 0.5) * gy + rand(-0.45, 0.45) * gy
-
-    const size = rand(minSize.value, maxSize.value)
-    const speed = rand(minSpeed.value, maxSpeed.value)
-    const t = clamp01((i / (n - 1 || 1)) + rand(-colorJitter.value, colorJitter.value))
-    const hsv = lerpHSV(hsvStart, hsvEnd, clamp01(t))
-    hsv.v = Math.max(0, Math.min(100, rand(valueMin.value, valueMax.value)))
-    const color = hsvToRgb(hsv.h, hsv.s, hsv.v)
-
-    particles.push({
-      x, y, prevX: x, prevY: y,
-      size, speed, hsvT: t, color,
-      angle: Math.random() * Math.PI * 2,
-      tag: Math.random(),
-    })
+  if (h > 1) h = (h % 360) / 360
+  const i = Math.floor(h * 6)
+  const f = h * 6 - i
+  const p = v * (1 - s)
+  const q = v * (1 - f * s)
+  const t = v * (1 - (1 - f) * s)
+  let r = 0, g = 0, b = 0
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break
+    case 1: r = q; g = v; b = p; break
+    case 2: r = p; g = v; b = t; break
+    case 3: r = p; g = q; b = v; break
+    case 4: r = t; g = p; b = v; break
+    case 5: r = v; g = p; b = q; break
   }
+  return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) }
 }
-function recolor() {
-  for (let i = 0; i < particles.length; i++) {
-    const p = particles[i]
-    const t = clamp01((i / (particles.length - 1 || 1)) + rand(-colorJitter.value, colorJitter.value))
-    p.hsvT = t
-    const hsv = lerpHSV(hsvStart, hsvEnd, clamp01(t))
-    hsv.v = Math.max(0, Math.min(100, rand(valueMin.value, valueMax.value)))
-    p.color = hsvToRgb(hsv.h, hsv.s, hsv.v)
+const rgbToCss = ({ r, g, b }, a = 1) => `rgba(${r}, ${g}, ${b}, ${a})`
+const hsvToCss = (hsv, a = 1) => rgbToCss(hsvToRgb(hsv.h, hsv.s, hsv.v), a)
+
+// ───────────────── reactive state ─────────────────
+const movementMode = ref('sineflow')
+const particleCount = ref(6000)
+const trailFade = ref(0.07)
+const pointScale = ref(1.0)
+
+// new UI state
+const simSpeed = ref(1.00)         // simulation speed multiplier
+const maxParticles = ref(particleCount.value) // total allocated (no rebuild)
+const activeCount = ref(particleCount.value)  // how many we simulate/draw now
+
+// hex pickers for endpoints
+const colorAhex = ref('#77a8d9')   // close to hsvStart default
+const colorBhex = ref('#19ffb2')   // close to hsvEnd default
+
+const minSize  = ref(0.7)
+const maxSize  = ref(3.2)
+const minSpeed = ref(40)
+const maxSpeed = ref(160)
+const valueMin = ref(0.85)
+const valueMax = ref(1.00)
+
+const hsvStart = ref({ h: 210/360, s: 0.45, v: 0.85 })
+const hsvEnd   = ref({ h: 160/360, s: 0.90, v: 1.00 })
+const hJitter  = ref(0.03)
+const sJitter  = ref(0.05)
+const vJitter  = ref(0.08)
+
+const cssStart = computed(() => hsvToCss(hsvStart.value))
+const cssEnd   = computed(() => hsvToCss(hsvEnd.value))
+
+watch([minSize, maxSize], ([a,b]) => { if (a > b) [minSize.value, maxSize.value] = [b, a] })
+watch([minSpeed, maxSpeed], ([a,b]) => { if (a > b) [minSpeed.value, maxSpeed.value] = [b, a] })
+watch([valueMin, valueMax], ([a,b]) => { if (a > b) [valueMin.value, valueMax.value] = [b, a] })
+
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  if (!m) return { r: 255, g: 255, b: 255 }
+  return { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) }
+}
+function rgbToHsv({r,g,b}) {
+  r/=255; g/=255; b/=255
+  const M=Math.max(r,g,b), m=Math.min(r,g,b), c=M-m
+  let h=0
+  if (c) {
+    if (M===r) h=((g-b)/c)%6
+    else if (M===g) h=(b-r)/c+2
+    else h=(r-g)/c+4
+    h/=6; if (h<0) h+=1
   }
+  const s = M===0 ? 0 : c/M
+  const v = M
+  return { h, s, v }
 }
 
-/* ---------- toroidal drawing (edge-cross fix) ---------- */
-function strokeToroidal(x1, y1, x2, y2, lineWidth, color) {
-  let ax = x1, ay = y1
-  let dx = x2 - ax
-  let dy = y2 - ay
-  if (dx >  world.W/2) ax += world.W; else if (dx < -world.W/2) ax -= world.W
-  if (dy >  world.H/2) ay += world.H; else if (dy < -world.H/2) ay -= world.H
+// ───────────────── DOM refs ─────────────────
+const glCanvas = ref(null)
+const fxCanvas = ref(null)
 
-  ctx.beginPath()
-  ctx.moveTo(ax - view.H/2, ay - view.H/2)
-  ctx.lineTo(x2 - view.H/2, y2 - view.H/2)
-  ctx.lineWidth = lineWidth
-  ctx.strokeStyle = color
-  ctx.stroke()
+// ───────────────── Three.js globals ─────────────────
+let renderer, simScene, pointsScene, fsqScene, cameraSim, cameraPoints, cameraFSQ
+let posRT = [], accumRT = [], posCur = 0, posNxt = 1, accCur = 0, accNxt = 1
+let speedTex, hsvTex
+let simMat, fadeMat, presentMat, pointsMat
+let indicesAttr, points
+let lightning = null
+let rafId = 0
 
-  if (ax < 0) {
-    ctx.beginPath(); ctx.moveTo(ax + world.W - view.H/2, ay - view.H/2); ctx.lineTo(x2 + world.W - view.H/2, y2 - view.H/2)
-    ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
-  } else if (ax >= world.W) {
-    ctx.beginPath(); ctx.moveTo(ax - world.W - view.H/2, ay - view.H/2); ctx.lineTo(x2 - world.W - view.H/2, y2 - view.H/2)
-    ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
-  }
-  if (ay < 0) {
-    ctx.beginPath(); ctx.moveTo(ax - view.H/2, ay + world.H - view.H/2); ctx.lineTo(x2 - view.H/2, y2 + world.H - view.H/2)
-    ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
-  } else if (ay >= world.H) {
-    ctx.beginPath(); ctx.moveTo(ax - view.H/2, ay - world.H); ctx.lineTo(x2 - view.H/2, y2 - world.H)
-    ctx.lineWidth = lineWidth; ctx.strokeStyle = color; ctx.stroke()
-  }
+// mode map to int
+const MODE_MAP = {
+  sineflow:0, swirl:1, curlish:2, lissajous:3, orbits:4, vortexgrid:5,
+  doublegyre:6, shear:7, hexvortex:8, jetstream:9, galactic:10, cellular:11
 }
 
-/* ---------- base velocity fields ---------- */
-function field_brownian(p, t) {
-  p.angle += (Math.random() - 0.5) * 0.5
-  return { x: Math.cos(p.angle), y: Math.sin(p.angle) }
-}
-function field_sineflow(p, t) {
-  const k = 0.0025, T = t * 0.0006
-  const vx = Math.sin((p.y * k) + T)
-  const vy = Math.cos((p.x * k) - T)
-  return norm(vx, vy)
-}
-function field_swirl(p, t) {
-  const cx = world.W * 0.5, cy = world.H * 0.5
-  const dx = p.x - cx, dy = p.y - cy
-  let vx = -dy, vy = dx
-  const wob = Math.sin(t * 0.001) * 0.3 + 1.0
-  return norm(vx*wob, vy*wob)
-}
-function field_curlish(p, t) {
-  const k = 0.003, T = t * 0.0007
-  const vx = Math.cos(p.y * k - T)
-  const vy = -Math.cos(p.x * k + T)
-  return norm(vx, vy)
+// DPR sizing
+function sizeCanvas(el) {
+  const DPR = Math.min(2, window.devicePixelRatio || 1)
+  const r = el.getBoundingClientRect()
+  el.width  = Math.max(1, Math.floor(r.width  * DPR))
+  el.height = Math.max(1, Math.floor(r.height * DPR))
+  return { w: el.width, h: el.height, DPR }
 }
 
-/* --- previously added algorithms --- */
-function field_perlinish(p, t) {
-  const a = noiseAngle(p.x, p.y, t)
-  return { x: Math.cos(a), y: Math.sin(a) }
+// ───────────────── shaders (GLSL3) ─────────────────
+
+// fullscreen tri vertex
+const FULLQUAD_VERT = /* glsl */`
+precision highp float;
+const vec2 P[3] = vec2[3]( vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0) );
+void main(){ gl_Position = vec4(P[gl_VertexID],0.0,1.0); }`;
+
+// simulation fragment (same fields as your WebGL2 version)
+const SIM_FRAG = /* glsl */`
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uPos;      // previous positions
+uniform sampler2D uSpeed;    // speed (r) + size (g)
+uniform vec2 uSimTexSize;    // cols, rows
+uniform vec2 uWorldSize;     // width, height
+uniform vec2 uCenter;        // world center
+uniform float uTime;
+uniform float uDt;
+uniform int uMode;
+uniform int uActiveCount;
+uniform float uSpeedMul;
+
+vec4 texel1D(sampler2D tex, float idx, vec2 ts){
+  float cols = ts.x; float y = floor(idx/cols); float x = idx - y*cols;
+  vec2 uv = (vec2(x,y)+0.5)/ts; return texture(tex, uv);
 }
-function field_lissajous(p, t) {
-  const kx = 0.0022, ky = 0.0031
-  const w = 0.0012 * t
-  const vx = Math.sin(p.x * kx + 2.1 + w) + Math.sin(p.y * ky + 0.3 - w)
-  const vy = Math.sin(p.x * ky + 1.7 - w) - Math.sin(p.y * kx + 2.8 + w)
-  return norm(vx, vy)
-}
-function field_orbits(p, t) {
-  const hubs = [
-    { x: world.W*0.3 + Math.sin(t*0.0003)*world.W*0.1, y: world.H*0.4 + Math.cos(t*0.0002)*world.H*0.12 },
-    { x: world.W*0.7 + Math.cos(t*0.00025)*world.W*0.1, y: world.H*0.6 + Math.sin(t*0.00018)*world.H*0.12 },
-  ]
-  const h = hubs[(p.tag * 2)|0]
-  const dx = p.x - h.x, dy = p.y - h.y
-  let vx = -dy - 0.2*dx, vy = dx - 0.2*dy
-  return norm(vx, vy)
-}
-function field_multiwell(p, t) {
-  const A = [
-    { x: world.W*0.2 + Math.sin(t*0.0004+0.0)*world.W*0.08, y: world.H*0.3 + Math.cos(t*0.0003+1.0)*world.H*0.08 },
-    { x: world.W*0.5 + Math.sin(t*0.0003+2.1)*world.W*0.05, y: world.H*0.5 + Math.cos(t*0.0005+0.2)*world.H*0.05 },
-    { x: world.W*0.8 + Math.sin(t*0.00035+3.2)*world.W*0.07, y: world.H*0.7 + Math.cos(t*0.00028+2.2)*world.H*0.07 },
-  ]
-  let vx=0, vy=0
-  for (const a of A) {
-    const dx = a.x - p.x, dy = a.y - p.y
-    const d2 = Math.max(100, dx*dx+dy*dy)
-    vx += dx / d2; vy += dy / d2
-  }
-  const rx = -vy*0.6, ry = vx*0.6
-  return norm(vx+rx, vy+ry)
-}
-function field_vortexgrid(p, t) {
-  const cell = 140
-  const cx = Math.floor(p.x / cell) * cell + cell/2
-  const cy = Math.floor(p.y / cell) * cell + cell/2
-  const dx = p.x - cx, dy = p.y - cy
-  const gx = Math.floor(p.x / cell)
-  const gy = Math.floor(p.y / cell)
-  const dir = ((gx + gy) & 1) ? 1 : -1
-  let vx = -dir * dy, vy = dir * dx
-  const wob = 0.8 + 0.3*Math.sin((t*0.001) + (gx*0.7 + gy*1.3))
-  return norm(vx*wob, vy*wob)
-}
-function field_doublegyre(p, t) {
-  const x = p.x / world.W, y = p.y / world.H
-  const A = 1.0, a = 0.1, w = 2*Math.PI*0.05
-  const eps = Math.sin(w * t * 0.001)
-  const f = a * eps * x*x + (1 - 2*a*eps) * x
-  const dfdx = 2*a*eps*x + (1 - 2*a*eps)
-  const u = -Math.PI * A * Math.sin(Math.PI * f) * Math.cos(Math.PI * y)
-  const v =  Math.PI * A * Math.cos(Math.PI * f) * Math.sin(Math.PI * y) * dfdx
-  return norm(u, v)
-}
-function field_shear(p, t) {
-  const phase = t * 0.0007
-  const ny = (p.y / world.H) * 2*Math.PI
-  const nx = (p.x / world.W) * 2*Math.PI
-  const jets = Math.sin(ny * 3 + 0.7*Math.sin(nx + phase))
-  const cross = 0.5 * Math.sin(nx*1.3 - phase)
-  return norm(jets, cross)
-}
-function field_spiralwave(p, t) {
-  const cx = world.W*0.5 + Math.sin(t*0.0003)*world.W*0.05
-  const cy = world.H*0.5 + Math.cos(t*0.00025)*world.H*0.05
-  const dx = p.x - cx, dy = p.y - cy
-  const r = Math.hypot(dx, dy) + 1e-3
-  const rot = 1.0 + 0.3*Math.sin(t*0.001)
-  let vx = -dy + 0.25*dx*Math.sign(Math.sin(t*0.0008))
-  let vy =  dx + 0.25*dy*Math.sign(Math.sin(t*0.0008))
-  return norm(vx*rot/r, vy*rot/r)
-}
-function field_hexvortex(p, t) {
-  const cell = 160
-  const row = Math.floor(p.y / (cell * 0.866))
-  const col = Math.floor((p.x - (row%2 ? cell/2 : 0)) / cell)
-  const cx = col*cell + (row%2 ? cell/2 : 0) + cell/2
-  const cy = row*(cell*0.866) + (cell*0.866)/2
-  const dx = p.x - cx, dy = p.y - cy
-  const dir = ((row + col) & 1) ? 1 : -1
-  let vx = -dir * dy, vy = dir * dx
-  const wob = 0.85 + 0.25*Math.sin(t*0.001 + row*0.9 + col*0.7)
-  return norm(vx*wob, vy*wob)
-}
-function field_lemniscate(p, t) {
-  const s = 0.25 + 0.05*Math.sin(t*0.0007)
-  const f1 = { x: world.W*(0.5 - s), y: world.H*0.5 }
-  const f2 = { x: world.W*(0.5 + s), y: world.H*0.5 }
-  function tangential(fx, fy) {
-    const dx = p.x - fx, dy = p.y - fy
-    const r2 = dx*dx + dy*dy + 200
-    return { x: -dy / r2, y: dx / r2 }
-  }
-  const v1 = tangential(f1.x, f1.y)
-  const v2 = tangential(f2.x, f2.y)
-  return norm(v1.x + v2.x, v1.y + v2.y)
-}
-function field_saddle(p, t) {
-  const cx = world.W*0.5, cy = world.H*0.5
-  const dx = (p.x - cx), dy = (p.y - cy)
-  const ang = t*0.0003
-  const ca = Math.cos(ang), sa = Math.sin(ang)
-  const rx = ca*dx - sa*dy, ry = sa*dx + ca*dy
-  return norm(rx, -ry)
-}
-function field_noisecurl(p, t) {
-  const s = 0.003, tt = t * 0.0003, e = 0.5
-  const X = p.x * s, Y = p.y * s, Z = tt
-  const nx = noiseBilinear(X, Y+e, Z) - noiseBilinear(X, Y-e, Z)
-  const ny = noiseBilinear(X+e, Y, Z) - noiseBilinear(X-e, Y, Z)
-  return norm(nx, -ny)
-}
-function field_jetstream(p, t) {
-  const ny = (p.y / world.H) * 2*Math.PI
-  let vx = Math.sin(ny * 5 + 0.5*Math.sin(p.x*0.004 + t*0.001))
-  let vy = 0.4 * Math.sin(p.x*0.002 - t*0.0008)
-  return norm(vx, vy)
-}
-function field_galactic(p, t) {
-  const cx = world.W*0.5, cy = world.H*0.5
-  const dx = p.x - cx, dy = p.y - cy
-  const r = Math.hypot(dx, dy) + 1e-3
-  let vx = -dy / r, vy = dx / r
-  const wave = 0.3*Math.sin(0.004*(dx) + 0.004*(dy) + t*0.0006)
-  vx += wave * (dx/r); vy += wave * (dy/r)
-  return norm(vx, vy)
-}
-function field_quasiperiodic(p, t) {
-  const c1 = { x: world.W*0.35 + Math.sin(t*0.00037)*world.W*0.06, y: world.H*0.45 + Math.cos(t*0.00041)*world.H*0.05 }
-  const c2 = { x: world.W*0.65 + Math.cos(t*0.00029)*world.W*0.07, y: world.H*0.55 + Math.sin(t*0.00033)*world.H*0.06 }
-  function swirl(cx, cy) {
-    const dx = p.x - cx, dy = p.y - cy
-    const r2 = dx*dx + dy*dy + 150
-    return { x: -dy / r2, y: dx / r2 }
-  }
-  const v1 = swirl(c1.x, c1.y)
-  const v2 = swirl(c2.x, c2.y)
-  return norm(v1.x + v2.x, v1.y + v2.y)
+vec2 wrapTorus(vec2 p, vec2 wh){ p = mod(p, wh); if(p.x<0.0)p.x+=wh.x; if(p.y<0.0)p.y+=wh.y; return p; }
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
+float noise(vec2 p){
+  vec2 i=floor(p), f=fract(p);
+  float a=hash(i), b=hash(i+vec2(1.,0.)), c=hash(i+vec2(0.,1.)), d=hash(i+vec2(1.,1.));
+  vec2 u=f*f*(3.0-2.0*f);
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
 }
 
-/* --- 20 NEW algorithms --- */
-
-// 1) Cellular sin×sin (divergence-free from streamfunction ψ = sin kx sin ky)
-function field_cellular(p, t){
-  const k = 2*Math.PI/180
-  const vx =  Math.cos(p.y*k) * Math.sin(p.x*k)
-  const vy = -Math.cos(p.x*k) * Math.sin(p.y*k)
-  return norm(vx, vy)
+// fields (12)
+vec2 field_sineflow(vec2 p, float t, vec2 wh){
+  float ax = 6.2831853*(p.y/wh.y) + t*0.35;
+  float ay = 6.2831853*(p.x/wh.x) - t*0.27;
+  vec2 v = vec2(sin(ax), sin(ay)); float L=length(v); return L>1e-6? v/L : vec2(0);
+}
+vec2 field_swirl(vec2 p, float t, vec2 wh){
+  vec2 d = p - uCenter; float r = length(d)+1e-6; vec2 tang = vec2(-d.y, d.x)/r;
+  float wob = 0.7+0.3*sin(t*0.6); return tang*wob;
+}
+vec2 field_curlish(vec2 p, float t, vec2 wh){
+  vec2 q=p/wh*4.0 + vec2(t*0.15, -t*0.11); float a=noise(q)*6.2831853; return vec2(cos(a),sin(a));
+}
+vec2 field_lissajous(vec2 p, float t, vec2 wh){
+  float x=p.x/wh.x, y=p.y/wh.y;
+  vec2 v=vec2( sin(6.28318*(3.0*x + 0.5*y + 0.05*sin(t))),
+               sin(6.28318*(0.7*x + 2.0*y + 0.08*cos(0.7*t))) );
+  float L=length(v); return L>1e-6? v/L : vec2(0);
+}
+vec2 field_orbits(vec2 p, float t, vec2 wh){
+  vec2 c1 = uCenter + vec2(0.25*wh.x*sin(t*0.4), 0.2*wh.y*cos(t*0.31));
+  vec2 c2 = uCenter + vec2(0.2*wh.x*cos(t*0.22+2.0), 0.25*wh.y*sin(t*0.29+1.0));
+  vec2 d1=p-c1; float r1=length(d1)+1e-4; vec2 v1=vec2(-d1.y,d1.x)/r1;
+  vec2 d2=p-c2; float r2=length(d2)+1e-4; vec2 v2=vec2(-d2.y,d2.x)/r2;
+  vec2 v=normalize(v1)*0.6 + normalize(v2)*0.4; float L=length(v); return L>1e-6? v/L:vec2(0);
+}
+vec2 field_vortexgrid(vec2 p, float t, vec2 wh){
+  vec2 g=(p/wh)*8.0; vec2 cell=floor(g); vec2 local=fract(g)-0.5;
+  float s = mod(cell.x+cell.y,2.0)<1.0 ? 1.0 : -1.0;
+  float ang=atan(local.y,local.x) + s*(1.2+0.2*sin(t));
+  vec2 v=vec2(-sin(ang),cos(ang)); float L=length(v); return L>1e-6? v/L:vec2(0);
+}
+vec2 field_doublegyre(vec2 p, float t, vec2 wh){
+  float A=0.25*wh.y, w=6.28318/10.0, eps=0.25, a=eps*sin(w*t), b=1.0-2.0*eps;
+  float x=p.x/wh.x, y=p.y/wh.y; float f=a*x*x + b*x; float dfdx=2.0*a*x + b;
+  float u = -3.14159*A*sin(3.14159*f)*cos(3.14159*y);
+  float v =  3.14159*A*cos(3.14159*f)*sin(3.14159*y)*dfdx;
+  vec2 vel=vec2(u,v); float L=length(vel); return L>1e-6? vel/L:vec2(0);
+}
+vec2 field_shear(vec2 p, float t, vec2 wh){
+  float y=p.y/wh.y;
+  vec2 v=vec2(0.6+0.4*sin(6.28318*y*1.5 + 0.7*t), 0.15*sin(6.28318*(p.x/wh.x*2.0 - 0.2*t)));
+  float L=length(v); return L>1e-6? v/L:vec2(0);
+}
+vec2 field_hexvortex(vec2 p, float t, vec2 wh){
+  vec2 q=(p/wh)*6.0; vec2 a=vec2(1.0,0.0); vec2 b=vec2(0.5, 0.8660254*1.1547005);
+  vec2 uv=vec2(dot(q,a), dot(q,b)); vec2 cell=floor(uv); vec2 f=fract(uv)-0.5;
+  float s=mod(cell.x+cell.y,2.0)<1.0?1.0:-1.0; float ang=atan(f.y,f.x)+s*(1.0+0.15*sin(t));
+  vec2 v=vec2(-sin(ang),cos(ang)); float L=length(v); return L>1e-6? v/L:vec2(0);
+}
+vec2 field_jetstream(vec2 p, float t, vec2 wh){
+  float y=p.y/wh.y;
+  vec2 v=vec2(0.5+0.5*sin(3.14159*(y*8.0 + 0.25*sin(t*0.6))),
+              0.2*sin(3.14159*(p.x/wh.x*2.0 - t*0.3)));
+  float L=length(v); return L>1e-6? v/L:vec2(0);
+}
+vec2 field_galactic(vec2 p, float t, vec2 wh){
+  vec2 d=p-uCenter; float r=length(d)+1e-4; float ang=atan(d.y,d.x);
+  float arm=0.25*sin(3.0*ang - 0.4*t); vec2 tang=vec2(-d.y,d.x)/r; vec2 radial=normalize(d);
+  vec2 v=normalize(tang + radial*arm); return v;
+}
+vec2 field_cellular(vec2 p, float t, vec2 wh){
+  float x=p.x/wh.x*6.28318, y=p.y/wh.y*6.28318;
+  vec2 v=vec2(sin(x)*cos(y+0.3*t), -cos(x)*sin(y-0.2*t));
+  float L=length(v); return L>1e-6? v/L:vec2(0);
+}
+vec2 getField(vec2 p,float t,vec2 wh,int m){
+  if(m==0) return field_sineflow(p,t,wh);
+  if(m==1) return field_swirl(p,t,wh);
+  if(m==2) return field_curlish(p,t,wh);
+  if(m==3) return field_lissajous(p,t,wh);
+  if(m==4) return field_orbits(p,t,wh);
+  if(m==5) return field_vortexgrid(p,t,wh);
+  if(m==6) return field_doublegyre(p,t,wh);
+  if(m==7) return field_shear(p,t,wh);
+  if(m==8) return field_hexvortex(p,t,wh);
+  if(m==9) return field_jetstream(p,t,wh);
+  if(m==10) return field_galactic(p,t,wh);
+  return field_cellular(p,t,wh);
 }
 
-// 2) Kelvin–Helmholtz Cat’s Eye
-function field_catseye(p, t){
-  const U = 1, Ly = 70, k = 2*Math.PI/220
-  const ph = k*p.x - t*0.0006
-  const sech2 = (y)=>{ const e=Math.cosh(y/Ly); return 1/(e*e) }
-  const u = U*Math.tanh((p.y-world.H*0.5)/Ly) + 0.8*sech2(p.y-world.H*0.5)*Math.cos(ph)
-  const v = -0.8*(2*(p.y-world.H*0.5)/Ly)*sech2(p.y-world.H*0.5)*Math.sin(ph)
-  return norm(u, v)
-}
+void main(){
+  vec2 frag = gl_FragCoord.xy - 0.5;
+  float idx = frag.y * uSimTexSize.x + frag.x;
 
-// 3) Double helix lanes
-function field_doublehelix(p, t){
-  const k = 0.004, w = t*0.001
-  const a = Math.sin(p.y*k + w)
-  const b = Math.sin((p.y+80)*k - w)
-  return norm(a + b, 0.6*Math.cos(p.x*k - w))
-}
+  vec2 posOld = texel1D(uPos, idx, uSimTexSize).xy;
 
-// 4) Mexican-hat ring vortex
-function field_mexicanring(p, t){
-  const cx=world.W/2, cy=world.H/2
-  const dx=p.x-cx, dy=p.y-cy, r=Math.hypot(dx,dy)+1e-3
-  const r0 = Math.min(world.W, world.H)*0.28
-  const g = Math.exp(-((r-r0)*(r-r0))/(2*(r0*0.25)**2)) * (1+0.3*Math.sin(t*0.001))
-  return norm(-dy*g, dx*g)
-}
-
-// 5) Tiled spirals
-function field_spiraltiles(p, t){
-  const cell=200
-  const cx = Math.floor(p.x/cell)*cell + cell/2
-  const cy = Math.floor(p.y/cell)*cell + cell/2
-  const dx=p.x-cx, dy=p.y-cy, r=Math.hypot(dx,dy)+1e-3
-  const spin = ((Math.floor(p.x/cell)+Math.floor(p.y/cell))&1)?1:-1
-  return norm(spin*(-dy/r) + 0.25*(dx/r), spin*(dx/r) + 0.25*(dy/r))
-}
-
-// 6) Swirl + noise
-function field_noisyswirl(p, t){
-  const cx=world.W/2, cy=world.H/2, dx=p.x-cx, dy=p.y-cy
-  const base = norm(-dy, dx)
-  const a = noiseAngle(p.x*1.2, p.y*1.2, t)
-  return norm(base.x + 0.6*Math.cos(a), base.y + 0.6*Math.sin(a))
-}
-
-// 7) Vortex dipole
-function field_dipole(p, t){
-  const s=0.22, c1={x:world.W*(0.5-s),y:world.H*0.5}, c2={x:world.W*(0.5+s),y:world.H*0.5}
-  function v(cx,cy,sgn){ const dx=p.x-cx,dy=p.y-cy; const r2=dx*dx+dy*dy+120; return {x: sgn*(-dy/r2), y: sgn*(dx/r2)}}
-  const v1=v(c1.x,c1.y,1), v2=v(c2.x,c2.y,-1)
-  return norm(v1.x+v2.x, v1.y+v2.y)
-}
-
-// 8) Vortex quadrupole
-function field_quadrupole(p, t){
-  const d=world.W*0.18
-  const C=[{x:world.W/2-d,y:world.H/2-d, s:1},{x:world.W/2+d,y:world.H/2-d,s:-1},{x:world.W/2-d,y:world.H/2+d,s:-1},{x:world.W/2+d,y:world.H/2+d,s:1}]
-  let vx=0,vy=0
-  for(const c of C){ const dx=p.x-c.x,dy=p.y-c.y; const r2=dx*dx+dy*dy+140; vx+=c.s*(-dy/r2); vy+=c.s*(dx/r2) }
-  return norm(vx,vy)
-}
-
-// 9) Three-body swirls
-function field_threebody(p, t){
-  const R=world.W*0.25
-  const c1={x:world.W/2+R*Math.cos(t*0.0004),y:world.H/2+R*Math.sin(t*0.0004)}
-  const c2={x:world.W/2+R*Math.cos(t*0.0004+2.094),y:world.H/2+R*Math.sin(t*0.0004+2.094)}
-  const c3={x:world.W/2+R*Math.cos(t*0.0004+4.188),y:world.H/2+R*Math.sin(t*0.0004+4.188)}
-  const C=[c1,c2,c3]
-  let vx=0,vy=0
-  for(const c of C){ const dx=p.x-c.x,dy=p.y-c.y; const r2=dx*dx+dy*dy+180; vx+=-dy/r2; vy+=dx/r2 }
-  return norm(vx,vy)
-}
-
-// 10) Traveling slinky
-function field_slinky(p, t){
-  const k=0.003, w=t*0.001
-  const vx = Math.sin(k*p.x + Math.sin(k*p.y*0.7 + w))
-  const vy = Math.sin(k*p.y + Math.sin(k*p.x*0.7 - w))
-  return norm(vx,vy)
-}
-
-// 11) Random curl tiles
-function field_rantiles(p, t){
-  const cell=180
-  const gx=Math.floor(p.x/cell), gy=Math.floor(p.y/cell)
-  const phase = fract(hash(gx+31, gy-17, Math.floor(t*0.0008)))*Math.PI*2
-  const cx=gx*cell+cell/2, cy=gy*cell+cell/2
-  const dx=p.x-cx, dy=p.y-cy
-  let vx=-dy, vy=dx
-  const rot=Math.cos(phase)
-  return norm(vx*rot - vy*(1-rot), vy*rot + vx*(1-rot))
-}
-
-// 12) Five-petal rose (angle driven by θ*5)
-function field_rose5(p, t){
-  const cx=world.W/2, cy=world.H/2
-  const dx=p.x-cx, dy=p.y-cy
-  const theta=Math.atan2(dy,dx), r=Math.hypot(dx,dy)+1e-3
-  const a = 5*theta + 0.5*Math.sin(t*0.001)
-  return norm(Math.cos(a) - dy/r, Math.sin(a) + dx/r)
-}
-
-// 13) Barber pole bands
-function field_barberpole(p, t){
-  const k=0.004
-  const ph = k*(p.x+p.y) + t*0.0012
-  return norm(Math.sin(ph), Math.cos(ph*0.7))
-}
-
-// 14) Polar jets ring (fast ring at radius r0)
-function field_polarjets(p, t){
-  const cx=world.W/2, cy=world.H/2
-  const dx=p.x-cx, dy=p.y-cy, r=Math.hypot(dx,dy)+1e-3
-  const r0=Math.min(world.W,world.H)*0.35
-  const band = Math.exp(-((r-r0)**2)/(2*(r0*0.15)**2))
-  return norm(-dy*band, dx*band)
-}
-
-// 15) Diamond vortices (rotate by 45° grid)
-function field_crystal(p, t){
-  const k=2*Math.PI/160
-  const X=(p.x+p.y)*k, Y=(p.x-p.y)*k
-  const vx =  Math.sin(X)*Math.cos(Y)
-  const vy = -Math.cos(X)*Math.sin(Y)
-  return norm(vx,vy)
-}
-
-// 16) Star fan (radial/tangential alternation by sector)
-function field_starfan(p, t){
-  const cx=world.W/2, cy=world.H/2
-  const dx=p.x-cx, dy=p.y-cy
-  const theta=Math.atan2(dy,dx)
-  const sectors=8
-  const s=((Math.floor((theta+Math.PI)/(2*Math.PI)*sectors))%2)?1:-1
-  return s>0 ? norm(dx,dy) : norm(-dy,dx)
-}
-
-// 17) Sunburst (breathing radial)
-function field_sunburst(p, t){
-  const cx=world.W/2, cy=world.H/2
-  const dx=p.x-cx, dy=p.y-cy
-  const b = 0.3*Math.sin(t*0.001)
-  return norm(dx*(1+b), dy*(1+b))
-}
-
-// 18) Lattice waves (two standing waves)
-function field_latticewaves(p, t){
-  const k=0.003, ph=t*0.001
-  const vx = Math.sin(k*p.x+ph)+Math.sin(k*p.y*1.3-ph)
-  const vy = Math.cos(k*p.y-ph)-Math.cos(k*p.x*1.1+ph)
-  return norm(vx,vy)
-}
-
-// 19) Bend & fold (tanh-based folding map)
-function field_bendfold(p, t){
-  const s=0.006, ph=t*0.001
-  const fx = Math.tanh(s*(p.y - world.H/2) + 0.5*Math.sin(ph))
-  const fy = Math.tanh(s*(p.x - world.W/2) - 0.5*Math.cos(ph))
-  return norm(fx, -fy)
-}
-
-// 20) Log-spiral + noise
-function field_lognoise(p, t){
-  const cx=world.W/2, cy=world.H/2, dx=p.x-cx, dy=p.y-cy
-  const r=Math.hypot(dx,dy)+1e-3
-  const tang = norm(-dy/r, dx/r)
-  const a = noiseAngle(p.x, p.y, t)
-  return norm(tang.x + 0.35*(dx/r) + 0.6*Math.cos(a), tang.y + 0.35*(dy/r) + 0.6*Math.sin(a))
-}
-
-function getField(mode) {
-  switch (mode) {
-    case 'brownian':   return field_brownian
-    case 'sineflow':   return field_sineflow
-    case 'swirl':      return field_swirl
-    case 'curlish':    return field_curlish
-    case 'perlinish':  return field_perlinish
-    case 'lissajous':  return field_lissajous
-    case 'orbits':     return field_orbits
-    case 'multiwell':  return field_multiwell
-    case 'vortexgrid': return field_vortexgrid
-    case 'doublegyre':    return field_doublegyre
-    case 'shear':         return field_shear
-    case 'spiralwave':    return field_spiralwave
-    case 'hexvortex':     return field_hexvortex
-    case 'lemniscate':    return field_lemniscate
-    case 'saddle':        return field_saddle
-    case 'noisecurl':     return field_noisecurl
-    case 'jetstream':     return field_jetstream
-    case 'galactic':      return field_galactic
-    case 'quasiperiodic': return field_quasiperiodic
-    // new 20
-    case 'cellular':      return field_cellular
-    case 'catseye':       return field_catseye
-    case 'doublehelix':   return field_doublehelix
-    case 'mexicanring':   return field_mexicanring
-    case 'spiraltiles':   return field_spiraltiles
-    case 'noisyswirl':    return field_noisyswirl
-    case 'dipole':        return field_dipole
-    case 'quadrupole':    return field_quadrupole
-    case 'threebody':     return field_threebody
-    case 'slinky':        return field_slinky
-    case 'rantiles':      return field_rantiles
-    case 'rose5':         return field_rose5
-    case 'barberpole':    return field_barberpole
-    case 'polarjets':     return field_polarjets
-    case 'crystal':       return field_crystal
-    case 'starfan':       return field_starfan
-    case 'sunburst':      return field_sunburst
-    case 'latticewaves':  return field_latticewaves
-    case 'bendfold':      return field_bendfold
-    case 'lognoise':      return field_lognoise
-    default:              return field_sineflow
-  }
-}
-
-/* ---------- animation ---------- */
-function step(ts) {
-  if (!lastT) lastT = ts
-  const dt = Math.min(0.05, (ts - lastT) / 1000)
-  lastT = ts
-
-  if (drawTrails.value && trailFade.value > 0) {
-    ctx.fillStyle = `rgba(0,0,0,${trailFade.value})`
-    ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
-  } else {
-    ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
+  // if this texel is beyond activeCount, just pass through previous pos
+  if (idx >= float(uActiveCount)) {
+    fragColor = vec4(posOld, 0.0, 1.0);
+    return;
   }
 
-  const field = getField(movementMode.value)
+  float speed = texel1D(uSpeed, idx, uSimTexSize).r;
+  vec2 dir = getField(posOld, uTime, uWorldSize, uMode);
+  vec2 pos = posOld + dir * speed * uSpeedMul * uDt;
+  pos = wrapTorus(pos, uWorldSize);
+  fragColor = vec4(pos, 0.0, 1.0);
+}`;
 
-  for (let i = 0; i < particles.length; i++) {
-    const p = particles[i]
-    const dir = field(p, ts)
-    const vx = dir.x * p.speed * dt
-    const vy = dir.y * p.speed * dt
+// fade trails
+const FADE_FRAG = /* glsl */`
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uAccum;
+uniform float uFade;
+void main(){
+  vec2 uv = gl_FragCoord.xy / vec2(textureSize(uAccum,0));
+  vec4 c = texture(uAccum, uv);
+  fragColor = c * (1.0 - uFade);
+}`;
 
-    const oldX = p.x, oldY = p.y
-    p.x += vx; p.y += vy
+// present (force opaque)
+const PRESENT_FRAG = /* glsl */`
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uAccum;
+void main(){
+  vec2 uv = gl_FragCoord.xy / vec2(textureSize(uAccum,0));
+  vec3 rgb = texture(uAccum, uv).rgb;
+  fragColor = vec4(rgb, 1.0);
+}`;
 
-    // toroidal wrap
-    if (p.x < 0) p.x += world.W
-    if (p.x >= world.W) p.x -= world.W
-    if (p.y < 0) p.y += world.H
-    if (p.y >= world.H) p.y -= world.H
+// points: vertex fetches pos + size + hsv; fragment draws soft circle, hsv->rgb
+const POINTS_VERT = /* glsl */`
+precision highp float;
+layout (location=0) in float aIndex;
+uniform sampler2D uPos;
+uniform sampler2D uSpeed;
+uniform sampler2D uHSV;
+uniform vec2 uSimTexSize;
+uniform vec2 uWorldSize;
+uniform float uPointScale;
+out vec3 vHSV;
+out float vAlpha;
 
-    if (drawTrails.value) {
-      strokeToroidal(oldX, oldY, p.x, p.y, p.size, rgbToCss(p.color, 0.85))
-    } else {
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-      ctx.fillStyle = rgbToCss(p.color, 0.9)
-      ctx.fill()
-    }
+vec4 texel1D(sampler2D tex, float idx, vec2 ts){
+  float cols=ts.x; float y=floor(idx/cols); float x=idx - y*cols;
+  vec2 uv=(vec2(x,y)+0.5)/ts; return texture(tex, uv);
+}
+
+void main(){
+  float idx=aIndex;
+  vec2 pos = texel1D(uPos, idx, uSimTexSize).xy;
+  vec4 sp  = texel1D(uSpeed, idx, uSimTexSize);
+  vHSV = texel1D(uHSV, idx, uSimTexSize).xyz;
+  vAlpha = 0.9;
+  vec2 ndc = (pos / uWorldSize)*2.0 - 1.0; ndc.y = -ndc.y;
+  gl_PointSize = max(1.0, sp.g * uPointScale);
+  gl_Position = vec4(ndc, 0.0, 1.0);
+}`;
+
+const POINTS_FRAG = /* glsl */`
+precision highp float;
+in vec3 vHSV;
+in float vAlpha;
+out vec4 fragColor;
+
+vec3 hsv2rgb(vec3 c){
+  vec3 rgb = clamp(abs(mod(c.x*6.0 + vec3(0.0,4.0,2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  return c.z * mix(vec3(1.0), rgb, c.y);
+}
+
+void main(){
+  vec2 p = gl_PointCoord*2.0 - 1.0;
+  float r2 = dot(p,p);
+  // if (r2 > 1.0) discard;
+  float soft = smoothstep(1.0, 0.0, r2);
+  vec3 rgb = hsv2rgb(vHSV);
+  fragColor = vec4(rgb, 1.0);
+}`;
+
+// ───────────────── setup / teardown ─────────────────
+function makeDataTextureFloat(data, width, height) {
+  const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.FloatType)
+  tex.needsUpdate = true
+  tex.minFilter = THREE.NearestFilter
+  tex.magFilter = THREE.NearestFilter
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping
+  return tex
+}
+
+function buildThree({ w, h, count }) {
+  // renderer
+  renderer = new THREE.WebGLRenderer({
+    canvas: glCanvas.value,
+    alpha: false,
+    antialias: false,
+    premultipliedAlpha: false
+  })
+  renderer.setSize(w, h, false)
+  renderer.setPixelRatio(1) // already sized in device px
+  renderer.autoClear = false
+  const gl = renderer.getContext()
+
+  // caps & extensions
+  const hasColorBufferFloat = !!renderer.extensions.get('EXT_color_buffer_float')
+  const hasFloatBlend = !!renderer.extensions.get('EXT_float_blend')
+
+  // scenes & cameras
+  simScene = new THREE.Scene()
+  pointsScene = new THREE.Scene()
+  fsqScene = new THREE.Scene()
+
+  // fullscreen-quad camera
+  cameraFSQ = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  // points render uses NDC positions already; any camera works but we keep an ortho
+  cameraPoints = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  cameraSim = cameraFSQ // sim is full-screen
+
+  // grid / indices
+  const cols = Math.ceil(Math.sqrt(count))
+  const rows = Math.ceil(count / cols)
+  const simTexSize = new THREE.Vector2(cols, rows)
+  const worldSize = new THREE.Vector2(w, h)
+
+  // init CPU data
+  const posInit = new Float32Array(cols*rows*4)
+  const spInit  = new Float32Array(cols*rows*4)
+  const hsvInit = new Float32Array(cols*rows*4)
+  for (let i=0;i<count;i++){
+    const x = Math.random()*w
+    const y = Math.random()*h
+    posInit[i*4+0]=x; posInit[i*4+1]=y; posInit[i*4+2]=0; posInit[i*4+3]=1
+    const speed = minSpeed.value + Math.random()*(maxSpeed.value - minSpeed.value)
+    const size  = minSize.value  + Math.random()*(maxSize.value  - minSize.value)
+    spInit[i*4+0]=speed; spInit[i*4+1]=size; spInit[i*4+2]=0; spInit[i*4+3]=1
+    const t = i/(count-1 || 1)
+    let hH = hsvStart.value.h + (hsvEnd.value.h - hsvStart.value.h)*t + (Math.random()*2-1)*hJitter.value
+    let sS = hsvStart.value.s + (hsvEnd.value.s - hsvStart.value.s)*t + (Math.random()*2-1)*sJitter.value
+    let vV = valueMin.value    + (valueMax.value    - valueMin.value)*t + (Math.random()*2-1)*vJitter.value
+    hH = hH - Math.floor(hH); sS = Math.max(0, Math.min(1, sS)); vV = Math.max(0, Math.min(1, vV))
+    hsvInit[i*4+0]=hH; hsvInit[i*4+1]=sS; hsvInit[i*4+2]=vV; hsvInit[i*4+3]=1
   }
 
-  lightning.update() // draws lightning on top (additive blend)
+  // textures (speed, hsv as DataTexture; positions as render targets)
+  speedTex = makeDataTextureFloat(spInit, cols, rows)
+  hsvTex   = makeDataTextureFloat(hsvInit, cols, rows)
 
-  animationId = requestAnimationFrame(step)
-}
+  const rtOptsSim = {
+    depthBuffer: false,
+    stencilBuffer: false,
+    type: THREE.FloatType,
+    format: THREE.RGBAFormat,
+    magFilter: THREE.NearestFilter,
+    minFilter: THREE.NearestFilter,
+    wrapS: THREE.ClampToEdgeWrapping,
+    wrapT: THREE.ClampToEdgeWrapping
+  }
+  posRT[0] = new THREE.WebGLRenderTarget(cols, rows, rtOptsSim)
+  posRT[1] = new THREE.WebGLRenderTarget(cols, rows, rtOptsSim)
 
-/* ---------- lifecycle ---------- */
-function regenerate() {
-  makeParticles()
-  ctx.fillStyle = 'rgba(0,0,0,1)'
-  ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
-}
-onMounted(() => {
-  ctx = canvasEl.value.getContext('2d', { alpha: false })
-  resizeCanvas()
-  makeParticles()
-  ctx.fillStyle = 'rgba(0,0,0,1)'
-  ctx.fillRect(0-view.H/2, 0-view.H/2, world.W-view.H/2, world.H-view.H/2)
+  // seed both pos textures
+  const seedTex = makeDataTextureFloat(posInit, cols, rows)
+  renderer.setRenderTarget(posRT[0]); renderer.clear()
+  renderer.setRenderTarget(posRT[1]); renderer.clear()
+  // a tiny single-use shader to blit seedTex into both RTs
+  const seedMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: FULLQUAD_VERT,
+    fragmentShader: /* glsl */`
+    precision highp float; out vec4 fc; uniform sampler2D uTex;
+    void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uTex,0)); fc = texture(uTex, uv); }`,
+    uniforms: { uTex: { value: seedTex } }
+  })
+  const fsqGeo = new THREE.BufferGeometry()
+  fsqGeo.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array([
+      -1, -1, 0,
+      3, -1, 0,
+      -1,  3, 0
+    ]), 3)
+  )
+  const fsqSeed = new THREE.Mesh(fsqGeo, seedMat); simScene.add(fsqSeed)
+  renderer.setRenderTarget(posRT[0]); renderer.render(simScene, cameraSim)
+  renderer.setRenderTarget(posRT[1]); renderer.render(simScene, cameraSim)
+  simScene.remove(fsqSeed); seedMat.dispose(); seedTex.dispose()
 
-  window.addEventListener('resize', () => {
-    const prevW = world.W, prevH = world.H
-    resizeCanvas()
-    const sx = world.W / Math.max(1, prevW)
-    const sy = world.H / Math.max(1, prevH)
-    for (const p of particles) {
-      p.x *= sx; p.y *= sy
-    }
+  // accum ping-pong (float if float blend available, else RGBA8)
+  const accumType = hasFloatBlend ? THREE.FloatType : THREE.UnsignedByteType
+  const rtOptsAccum = {
+    depthBuffer: false, stencilBuffer:false,
+    type: accumType, format: THREE.RGBAFormat,
+    magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter,
+    wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping
+  }
+  accumRT[0] = new THREE.WebGLRenderTarget(w, h, rtOptsAccum)
+  accumRT[1] = new THREE.WebGLRenderTarget(w, h, rtOptsAccum)
+  renderer.setRenderTarget(accumRT[0]); renderer.clearColor(); renderer.clear(true, true, true)
+  renderer.setRenderTarget(accumRT[1]); renderer.clearColor(); renderer.clear(true, true, true)
+
+  // materials
+  simMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: FULLQUAD_VERT,
+    fragmentShader: SIM_FRAG,
+    uniforms: {
+      uPos: { value: posRT[posCur].texture },
+      uSpeed: { value: speedTex },
+      uSimTexSize: { value: simTexSize },
+      uWorldSize: { value: worldSize },
+      uCenter: { value: new THREE.Vector2(w*0.5, h*0.5) },
+      uTime: { value: 0 },
+      uDt: { value: 0 },
+      uMode: { value: MODE_MAP[movementMode.value] ?? 0 },
+      uActiveCount: { value: activeCount.value },
+      uSpeedMul: { value: simSpeed.value },
+    },
+    depthTest: false, depthWrite: false
   })
 
-  animationId = requestAnimationFrame(step)
-})
-onBeforeUnmount(() => {
-  if (animationId) cancelAnimationFrame(animationId)
-  lightning.dispose()
+  fadeMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: FULLQUAD_VERT,
+    fragmentShader: FADE_FRAG,
+    uniforms: {
+      uAccum: { value: accumRT[accCur].texture },
+      uFade: { value: trailFade.value }
+    },
+    depthTest: false, depthWrite: false, transparent: false
+  })
+
+  presentMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: FULLQUAD_VERT,
+    fragmentShader: PRESENT_FRAG,
+    uniforms: { uAccum: { value: accumRT[accNxt].texture } },
+    depthTest: false, depthWrite: false, transparent: false
+  })
+
+  // points geometry: single attribute aIndex in range [0..count)
+    const idx = new Float32Array(count)
+  for (let i=0;i<count;i++) idx[i] = i
+
+  const geom = new THREE.BufferGeometry()
+  indicesAttr = new THREE.BufferAttribute(idx, 1)
+  geom.setAttribute('aIndex', indicesAttr)
+
+  // ➜ three.js expects a 'position' attribute for bounding volumes.
+  // We don't use it in the shader, but add a dummy one (all zeros).
+  const dummyPos = new Float32Array(count * 3) // all 0s
+  geom.setAttribute('position', new THREE.BufferAttribute(dummyPos, 3))
+
+  // Set a large bounding sphere so three.js skips computing it.
+  geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), Math.max(w, h) * 1.5)
+
+  pointsMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: POINTS_VERT,
+    fragmentShader: POINTS_FRAG,
+    uniforms: {
+      uPos: { value: posRT[posCur].texture },
+      uSpeed: { value: speedTex },
+      uHSV: { value: hsvTex },
+      uSimTexSize: { value: simTexSize },
+      uWorldSize: { value: worldSize },
+      uPointScale: { value: pointScale.value }
+    },
+    blending: THREE.AdditiveBlending,
+    depthTest: false, depthWrite: false, transparent: true
+  })
+
+  points = new THREE.Points(geom, pointsMat)
+
+  // Also disable frustum culling since the true bounds are dynamic in the shader.
+  points.frustumCulled = false
+
+  pointsScene.add(points)
+
+  // FSQ for passes
+  const fsq = new THREE.Mesh(fsqGeo, simMat) // we’ll swap materials per pass
+  fsqScene.add(fsq)
+
+  // expose for step() closures
+  return {
+    gl, fsq, simTexSize, worldSize, hasColorBufferFloat, hasFloatBlend
+  }
+}
+
+// recolor HSV texture
+// replace your existing recolorHSV with this version:
+function recolorHSV(countOverride) {
+  if (!hsvTex || !pointsMat) return
+
+  const cols = pointsMat.uniforms.uSimTexSize.value.x | 0
+  const rows = pointsMat.uniforms.uSimTexSize.value.y | 0
+  const maxCount = cols * rows
+  const count = Math.min(countOverride ?? (indicesAttr?.count || maxCount), maxCount)
+
+  const data = hsvTex.image?.data
+  if (!data || data.length < cols * rows * 4) return
+
+  for (let i = 0; i < count; i++) {
+    const t = (count > 1) ? (i / (count - 1)) : 0
+    let h = hsvStart.value.h + (hsvEnd.value.h - hsvStart.value.h) * t + (Math.random()*2-1) * hJitter.value
+    let s = hsvStart.value.s + (hsvEnd.value.s - hsvStart.value.s) * t + (Math.random()*2-1) * sJitter.value
+    let v = hsvStart.value.v + (hsvEnd.value.v - hsvStart.value.v) * t + (Math.random()*2-1) * vJitter.value
+
+    h = h - Math.floor(h)      // wrap hue
+    s = Math.min(1, Math.max(0, s))
+    v = Math.min(1, Math.max(0, v))
+    const k = i * 4
+    data[k+0] = h; data[k+1] = s; data[k+2] = v; data[k+3] = 1
+  }
+
+  // (optional) leave the rest unchanged; those particles aren’t drawn when inactive
+
+  hsvTex.needsUpdate = true
+}
+
+
+// ───────────────── frame loop ─────────────────
+let lastT = 0, t0 = 0
+function step() {
+  const now = performance.now()*0.001
+  console.log('step', now)
+  if (!t0) { t0 = now; lastT = now }
+  const dt = Math.min(0.033, Math.max(0, now - lastT))
+  lastT = now
+
+  // 1) SIM: pos[cur] -> pos[nxt]
+  simMat.uniforms.uPos.value = posRT[posCur].texture
+  simMat.uniforms.uTime.value = now - t0
+  simMat.uniforms.uDt.value = dt
+  simMat.uniforms.uActiveCount.value = activeCount.value
+  simMat.uniforms.uSpeedMul.value = simSpeed.value
+  const fsqMesh = fsqScene.children[0]
+  fsqMesh.material = simMat
+  renderer.setRenderTarget(posRT[posNxt])
+  renderer.clear()
+  renderer.render(fsqScene, cameraSim)
+  renderer.setRenderTarget(null)
+  // swap pos ping-pong
+  ;[posCur, posNxt] = [posNxt, posCur]
+
+  // after pos swap:
+  pointsMat.uniforms.uPos.value = posRT[posCur].texture
+
+  // enforce draw range for points (so we only draw activeCount)
+  if (points && points.geometry) {
+    points.geometry.setDrawRange(0, activeCount.value)
+  }
+
+  // 2) FADE: accum[cur] * (1 - fade) -> accum[nxt]
+  fadeMat.uniforms.uAccum.value = accumRT[accCur].texture
+  fsqMesh.material = fadeMat
+  renderer.setRenderTarget(accumRT[accNxt])
+  renderer.clear()
+  renderer.render(fsqScene, cameraFSQ)
+
+  // 3) DRAW POINTS additively into accum[nxt]
+  pointsMat.uniforms.uPos.value = posRT[posCur].texture // current positions after swap
+  renderer.setRenderTarget(accumRT[accNxt])
+  renderer.state.setBlending(THREE.AdditiveBlending)
+  renderer.render(pointsScene, cameraPoints)
+  renderer.state.setBlending(THREE.NoBlending)
+  renderer.setRenderTarget(null)
+
+  // 4) PRESENT: accum[nxt] -> screen (opaque)
+  presentMat.uniforms.uAccum.value = accumRT[accNxt].texture
+  fsqMesh.material = presentMat
+  renderer.setRenderTarget(null)
+  renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height)
+  renderer.clearColor()
+  renderer.clear(true, true, true)
+  renderer.render(fsqScene, cameraFSQ)
+
+  // 5) SWAP accum
+  ;[accCur, accNxt] = [accNxt, accCur]
+}
+
+function animate() {
+  step()
+  if (useLightning && lightning) {
+    const ctx = fxCanvas.value.getContext('2d')
+    lightning.update(performance.now(), ctx)
+  }
+  rafId = requestAnimationFrame(animate)
+}
+
+// ───────────────── resize / rebuild ─────────────────
+function recreate(count) {
+  // dispose previous if any
+  disposeThree()
+
+  const { w, h } = sizeCanvas(glCanvas.value)
+  sizeCanvas(fxCanvas.value)
+
+  const built = buildThree({ w, h, count })
+  // lightning attach/resize
+  if (useLightning && !lightning) {
+    const getCtx  = () => fxCanvas.value.getContext('2d')
+    const getSize = () => ({ W: fxCanvas.value.width, H: fxCanvas.value.height })
+    const getParticles = () => null
+    lightning = useLightning({ getCtx, getSize, getParticles })
+  }
+  lightning && lightning.setSize(fxCanvas.value.width, fxCanvas.value.height)
+}
+
+function resizeRendererToDisplaySize() {
+  const r1 = sizeCanvas(glCanvas.value)
+  sizeCanvas(fxCanvas.value)
+  if (!renderer) return
+  renderer.setSize(r1.w, r1.h, false)
+
+  // rebuild accum RTs (match viewport size)
+  const accum0 = accumRT[0], accum1 = accumRT[1]
+  if (accum0 && (accum0.width !== r1.w || accum0.height !== r1.h)) {
+    accum0.dispose(); accum1.dispose()
+    const hasFloatBlend = !!renderer.extensions.get('EXT_float_blend')
+    const type = hasFloatBlend ? THREE.FloatType : THREE.UnsignedByteType
+    const opts = {
+      depthBuffer:false, stencilBuffer:false,
+      type, format:THREE.RGBAFormat,
+      magFilter:THREE.NearestFilter, minFilter:THREE.NearestFilter,
+      wrapS:THREE.ClampToEdgeWrapping, wrapT:THREE.ClampToEdgeWrapping
+    }
+    accumRT[0] = new THREE.WebGLRenderTarget(r1.w, r1.h, opts)
+    accumRT[1] = new THREE.WebGLRenderTarget(r1.w, r1.h, opts)
+    renderer.setRenderTarget(accumRT[0]); renderer.clear(true,true,true)
+    renderer.setRenderTarget(accumRT[1]); renderer.clear(true,true,true)
+  }
+
+  // update uniforms world size & center
+  if (simMat) {
+    simMat.uniforms.uWorldSize.value.set(r1.w, r1.h)
+    simMat.uniforms.uCenter.value.set(r1.w*0.5, r1.h*0.5)
+  }
+  if (pointsMat) {
+    pointsMat.uniforms.uWorldSize.value.set(r1.w, r1.h)
+  }
+}
+
+function disposeThree() {
+  try {
+    cancelAnimationFrame(rafId)
+  } catch {}
+  // dispose materials / targets / textures / geometry
+  ;[simMat, fadeMat, presentMat, pointsMat].forEach(m => m && m.dispose && m.dispose())
+  simMat = fadeMat = presentMat = pointsMat = null
+  ;[0,1].forEach(i => { posRT[i]?.dispose?.(); accumRT[i]?.dispose?.() })
+  posRT = []; accumRT = []
+  speedTex?.dispose?.(); hsvTex?.dispose?.()
+  speedTex = hsvTex = null
+  pointsScene && points && pointsScene.remove(points)
+  points = null
+  if (renderer) {
+    renderer.dispose()
+    renderer.forceContextLoss && renderer.forceContextLoss()
+    renderer = null
+  }
+}
+
+// ───────────────── Vue lifecycle ─────────────────
+onMounted(async () => {
+  await nextTick()
+  recreate(particleCount.value)
+
+  // watchers
+  watch(movementMode, v => { simMat && (simMat.uniforms.uMode.value = MODE_MAP[v] ?? 0) })
+  watch(trailFade, v => { fadeMat && (fadeMat.uniforms.uFade.value = v) })
+  watch(pointScale, v => { pointsMat && (pointsMat.uniforms.uPointScale.value = v) })
+  // HSV sliders → recolor texture
+  watch(
+    [
+      () => hsvStart.value.h, () => hsvStart.value.s, () => hsvStart.value.v,
+      () => hsvEnd.value.h,   () => hsvEnd.value.s,   () => hsvEnd.value.v,
+      () => valueMin.value,   () => valueMax.value,
+      () => hJitter.value,    () => sJitter.value,    () => vJitter.value
+    ],
+    () => {
+      recolorHSV(activeCount.value)   // or recolorHSV()
+    }
+  )
+
+  watch(particleCount, v => recreate(v))
+  // Field
+  watch(movementMode, v => { simMat && (simMat.uniforms.uMode.value = MODE_MAP[v] ?? 0) })
+
+  // Simulation speed
+  watch(simSpeed, v => { simMat && (simMat.uniforms.uSpeedMul.value = v) })
+
+  // Fade
+  watch(trailFade, v => { fadeMat && (fadeMat.uniforms.uFade.value = v) })
+
+  // Active particle count (no rebuild)
+  watch(activeCount, (n) => {
+    // clamp to [1, maxParticles]
+    const maxN = maxParticles.value
+    if (n < 1) activeCount.value = 1
+    if (n > maxN) activeCount.value = maxN
+
+    // sim sees it via uActiveCount each frame; points use drawRange above
+  })
+
+  // Point size
+  watch(pointScale, v => { pointsMat && (pointsMat.uniforms.uPointScale.value = v) })
+
+  // Colors → recolor HSV only
+  watch([hsvStart, hsvEnd, hJitter, sJitter, vJitter, valueMin, valueMax, colorAhex, colorBhex], () => {
+    if (!hsvTex || !pointsMat) return
+    const cols = pointsMat.uniforms.uSimTexSize.value.x|0
+    const rows = pointsMat.uniforms.uSimTexSize.value.y|0
+    // only recolor up to activeCount (saves time), or all if you prefer
+    recolorHSV(activeCount.value, cols, rows)
+  })
+  watch(
+    [() => hsvStart.value.h, () => hsvStart.value.s, () => hsvStart.value.v,
+    () => hsvEnd.value.h,   () => hsvEnd.value.s,   () => hsvEnd.value.v],
+    () => {
+      if (!hsvTex) return
+      recolorHSV(activeCount.value) // reuse your existing recolor function
+    }
+  )
+  watch(colorAhex, (hex) => {
+    const hsv = rgbToHsv(hexToRgb(hex))
+    hsvStart.value = { h: hsv.h, s: Math.max(0.1, hsv.s), v: Math.max(0.1, hsv.v) }
+  })
+  watch(colorBhex, (hex) => {
+    const hsv = rgbToHsv(hexToRgb(hex))
+    hsvEnd.value = { h: hsv.h, s: Math.max(0.1, hsv.s), v: Math.max(0.1, hsv.v) }
+  })
+
+
+  // resize
+  const onResize = () => {
+    resizeRendererToDisplaySize()
+    lightning && lightning.setSize(fxCanvas.value.width, fxCanvas.value.height)
+  }
+  window.addEventListener('resize', onResize)
+  fxCanvas.value._onResize = onResize
+
+  // start loop
+  t0 = 0; lastT = 0
+  rafId = requestAnimationFrame(function go(){ animate() })
 })
 
-watch([minSize, maxSize], () => {
-  if (minSize.value > maxSize.value) [minSize.value, maxSize.value] = [maxSize.value, minSize.value]
-})
-watch([minSpeed, maxSpeed], () => {
-  if (minSpeed.value > maxSpeed.value) [minSpeed.value, maxSpeed.value] = [maxSpeed.value, minSpeed.value]
-})
-watch([valueMin, valueMax], () => {
-  if (valueMin.value > valueMax.value) {
-    [valueMin.value, valueMax.value] = [valueMax.value, valueMin.value]
-  }
+onBeforeUnmount(() => {
+  if (fxCanvas.value?._onResize) window.removeEventListener('resize', fxCanvas.value._onResize)
+  try { lightning && lightning.dispose && lightning.dispose() } catch {}
+  disposeThree()
 })
 </script>
 
 <style scoped>
-:root {
-  --bg: #0b0b0f;
-  --panel: #14141b;
-  --text: #eaeaf3;
-  --muted: #a9a9b6;
-  --accent: #7aa2ff;
-  --border: #282836;
-  --btn: #1f2535;
-}
-
-* { box-sizing: border-box; }
-
-.app {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  height: 100vh;
-  width: 100vw;
-  background: var(--bg);
-  color: var(--text);
-  overflow: hidden;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-}
-
-.controls {
-  padding: 16px 16px 24px;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
+.panel {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 320px;
   overflow-y: auto;
+  padding: 16px 14px;
+  box-sizing: border-box;
+  background: rgba(10, 12, 18, 0.9);
+  color: #e2e6ee;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(6px);
+  z-index: 10;
+}
+.panel h2 { margin: 0 0 12px; font: 600 14px/1.2 system-ui, sans-serif; letter-spacing: .02em; }
+.panel label { display: block; margin: 12px 0; font-size: 12px; }
+.panel input[type="range"] { width: 100%; }
+.panel select, .panel input[type="color"] { width: 100%; margin-top: 6px; }
+.panel .row { display: flex; gap: 12px; align-items: center; }
+.panel .color { flex: 1; }
+.bar.big {
+  width: 100%; height: 10px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  margin-top: 8px;
 }
 
-.controls h2 {
-  margin: 0 0 12px;
-  font-size: 20px;
-  letter-spacing: 0.3px;
+/* make the stage fill everything to the right of the panel */
+.full-bleed-stage {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  left: 320px;            /* reserve space for the panel */
 }
+.layer { width: 100%; height: 100%; background:#000; } /* ensure it stretches */
+.overlay { pointer-events: none; }
 
-.control-group {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-  margin-bottom: 12px;
-  background: #101018;
-}
-
-.control-group h3 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  color: var(--muted);
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-label {
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 130px 1fr;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 0;
-}
-
-input[type="range"] { width: 100%; }
-
-.hsv-block {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  padding: 10px;
-  margin-bottom: 8px;
-}
-
-.hsv-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-
-.swatch {
-  width: 24px;
-  height: 16px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-}
-
-.btn {
-  width: 100%;
-  margin-top: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  background: var(--btn);
-  color: var(--text);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: filter 0.15s ease;
-  font-weight: 600;
-}
-.btn:hover { filter: brightness(1.1); }
-
-.stage { position: relative; height: 100%; width: 100%; }
-canvas { display: block; width: 100%; height: 100%; background: black; }
 </style>
