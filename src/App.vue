@@ -366,6 +366,24 @@ uniform float uPointScale;
 out vec3 vHSV;
 out float vAlpha;
 
+// Map a logical particle idx -> a pseudo-random texel in [0 .. cols*rows-1]
+// Uses a low-discrepancy hash (golden ratio) for uniform coverage.
+float hash01(float i) {
+  // golden ratio conjugate gives great stratified coverage
+  return fract(i * 0.6180339887498948482); // φ' = 1/φ ≈ 0.618...
+}
+
+vec4 sampleHSVByIndex(sampler2D tex, float idx, vec2 ts) {
+  float cols = ts.x, rows = ts.y;
+  float N = cols * rows;          // total texels available
+  // pick a pseudo-random slot across the whole texture
+  float j = floor(hash01(idx) * N);
+  float y = floor(j / cols);
+  float x = j - y * cols;
+  vec2 uv = (vec2(x, y) + 0.5) / ts;
+  return texture(tex, uv);
+}
+
 vec4 texel1D(sampler2D tex, float idx, vec2 ts){
   float cols=ts.x; float y=floor(idx/cols); float x=idx - y*cols;
   vec2 uv=(vec2(x,y)+0.5)/ts; return texture(tex, uv);
@@ -375,7 +393,7 @@ void main(){
   float idx=aIndex;
   vec2 pos = texel1D(uPos, idx, uSimTexSize).xy;
   vec4 sp  = texel1D(uSpeed, idx, uSimTexSize);
-  vHSV = texel1D(uHSV, idx, uSimTexSize).xyz;
+  vHSV = sampleHSVByIndex(uHSV, idx, uSimTexSize).xyz;
   vAlpha = 0.9;
   vec2 ndc = (pos / uWorldSize)*2.0 - 1.0; ndc.y = -ndc.y;
   gl_PointSize = max(1.0, sp.g * uPointScale);
@@ -589,7 +607,7 @@ function buildThree({ w, h, count }) {
       uWorldSize: { value: worldSize },
       uPointScale: { value: pointScale.value }
     },
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     depthTest: false, depthWrite: false, transparent: true
   })
 
@@ -684,9 +702,9 @@ function step() {
   // 3) DRAW POINTS additively into accum[nxt]
   pointsMat.uniforms.uPos.value = posRT[posCur].texture // current positions after swap
   renderer.setRenderTarget(accumRT[accNxt])
-  renderer.state.setBlending(THREE.AdditiveBlending)
+  renderer.state.setBlending(THREE.NormalBlending)
   renderer.render(pointsScene, cameraPoints)
-  renderer.state.setBlending(THREE.NoBlending)
+  renderer.state.setBlending(THREE.NormalBlending)
   renderer.setRenderTarget(null)
 
   // 4) PRESENT: accum[nxt] -> screen (opaque)
