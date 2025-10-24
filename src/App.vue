@@ -19,6 +19,25 @@
     </select>
   </label>
 
+  <h3>Field Parameters</h3>
+  <div v-if="FIELD_SCHEMAS[movementMode]">
+    <div v-for="s in FIELD_SCHEMAS[movementMode].p" :key="s.key" class="row">
+      <label :for="s.key">{{ s.label }}: {{ fmt(fieldParams[s.key], 2) }}</label>
+      <input type="range"
+            :id="s.key"
+            :min="s.min" :max="s.max" :step="s.step"
+            v-model.number="fieldParams[s.key]" />
+    </div>
+    <div v-for="s in FIELD_SCHEMAS[movementMode].q" :key="s.key" class="row">
+      <label :for="s.key">{{ s.label }}: {{ fmt(fieldParams[s.key], 2) }}</label>
+      <input type="range"
+            :id="s.key"
+            :min="s.min" :max="s.max" :step="s.step"
+            v-model.number="fieldParams[s.key]" />
+    </div>
+  </div>
+
+
   <label>Simulation speed: {{ fmt(simSpeed,2) }}×
     <input type="range" min="0" max="4" step="0.01" v-model.number="simSpeed" />
   </label>
@@ -115,7 +134,7 @@ const hsvToCss = (hsv, a = 1) => rgbToCss(hsvToRgb(hsv.h, hsv.s, hsv.v), a)
 const movementMode = ref('sineflow')
 const particleCount = ref(6000)
 const trailFade = ref(0.07)
-const pointScale = ref(1.0)
+const pointScale = ref(3.0)
 
 // new UI state
 const simSpeed = ref(1.00)         // simulation speed multiplier
@@ -142,9 +161,189 @@ const vJitter  = ref(0.08)
 const cssStart = computed(() => hsvToCss(hsvStart.value))
 const cssEnd   = computed(() => hsvToCss(hsvEnd.value))
 
-watch([minSize, maxSize], ([a,b]) => { if (a > b) [minSize.value, maxSize.value] = [b, a] })
-watch([minSpeed, maxSpeed], ([a,b]) => { if (a > b) [minSpeed.value, maxSpeed.value] = [b, a] })
-watch([valueMin, valueMax], ([a,b]) => { if (a > b) [valueMin.value, valueMax.value] = [b, a] })
+// Slider schema: label, key, range, default → mapped into uP (vec4) / uQ (vec4)
+const FIELD_SCHEMAS = {
+  // 1) SINE FLOW — uP = (cyclesX, cyclesY, tSpeedX, tSpeedY)
+  sineflow: {
+    p: [
+      { key: 'cyclesX',  label: 'Cycles X',     min: 0,   max: 20,  step: 0.1,  def: 1.0 },
+      { key: 'cyclesY',  label: 'Cycles Y',     min: 0,   max: 20,  step: 0.1,  def: 1.0 },
+      { key: 'tSpeedX',  label: 'Time Speed X', min: -5,  max: 5,   step: 0.01, def: 0.35 },
+      { key: 'tSpeedY',  label: 'Time Speed Y', min: -5,  max: 5,   step: 0.01, def: 0.27 },
+    ],
+    q: []
+  },
+
+  // 2) SWIRL — uP = (wobbleMin, wobbleMax, wobbleSpeed, radialPow), uQ = (spinScale, -, -, -)
+  swirl: {
+    p: [
+      { key: 'wobbleMin',   label: 'Wobble Min',     min: 0,   max: 2,   step: 0.01, def: 0.7 },
+      { key: 'wobbleMax',   label: 'Wobble Max',     min: 0,   max: 2,   step: 0.01, def: 1.0 },
+      { key: 'wobbleSpeed', label: 'Wobble Speed',   min: 0,   max: 5,   step: 0.01, def: 0.6 },
+      { key: 'radialPow',   label: 'Radial Falloff', min: 0,   max: 4,   step: 0.01, def: 0.0 },
+    ],
+    q: [
+      { key: 'spinScale',   label: 'Spin Scale',     min: 0,   max: 3,   step: 0.01, def: 1.0 },
+    ]
+  },
+
+  // 3) CURLISH — uP = (noiseScale, timeSpeedX, timeSpeedY, angleScaleMult)
+  curlish: {
+    p: [
+      { key: 'noiseScale',  label: 'Noise Scale',    min: 0.1, max: 12,  step: 0.1,  def: 1.3 },
+      { key: 'timeSpeedX',  label: 'Time Speed X',   min: -3,  max: 3,   step: 0.01, def: 1.0 },
+      { key: 'timeSpeedY',  label: 'Time Speed Y',   min: -3,  max: 3,   step: 0.01, def: 1.8 },
+      { key: 'angleScale',  label: 'Angle Scale',    min: 0,   max: 3,   step: 0.01, def: 1.0 },
+    ],
+    q: []
+  },
+
+  // 4) LISSAJOUS — uP = (aX, bX, tAmpX, tFreqX), uQ = (aY, bY, tAmpY, tFreqY)
+  lissajous: {
+    p: [
+      { key: 'aX',      label: 'aX (x coeff)',       min: 0,   max: 8,   step: 0.01, def: 1.3 },
+      { key: 'bX',      label: 'bX (y coeff)',       min: 0,   max: 8,   step: 0.01, def: 1.3 },
+      { key: 'tAmpX',   label: 'Time Amp X',         min: 0,   max: 1,   step: 0.001,def: 0.55 },
+      { key: 'tFreqX',  label: 'Time Freq X',        min: 0,   max: 5,   step: 0.01, def: 0.25 },
+    ],
+    q: [
+      { key: 'aY',      label: 'aY (x coeff)',       min: 0,   max: 8,   step: 0.01, def: 1.4 },
+      { key: 'bY',      label: 'bY (y coeff)',       min: 0,   max: 8,   step: 0.01, def: 1.4 },
+      { key: 'tAmpY',   label: 'Time Amp Y',         min: 0,   max: 1,   step: 0.001,def: 0.8 },
+      { key: 'tFreqY',  label: 'Time Freq Y',        min: 0,   max: 5,   step: 0.01, def: 1.6 },
+    ]
+  },
+
+  // 5) ORBITS — uP = (c1AmpX, c1AmpY, c1FreqX, c1FreqY), uQ = (c2AmpX, c2AmpY, c2FreqX, c2FreqY)
+  orbits: {
+    p: [
+      { key: 'c1AmpX',  label: 'C1 Amp X (screen)',  min: 0,   max: 0.5, step: 0.001,def: 0.25 },
+      { key: 'c1AmpY',  label: 'C1 Amp Y (screen)',  min: 0,   max: 0.5, step: 0.001,def: 0.20 },
+      { key: 'c1FreqX', label: 'C1 Freq X',          min: 0,   max: 3,   step: 0.001,def: 0.40 },
+      { key: 'c1FreqY', label: 'C1 Freq Y',          min: 0,   max: 3,   step: 0.001,def: 0.31 },
+    ],
+    q: [
+      { key: 'c2AmpX',  label: 'C2 Amp X (screen)',  min: 0,   max: 0.5, step: 0.001,def: 0.20 },
+      { key: 'c2AmpY',  label: 'C2 Amp Y (screen)',  min: 0,   max: 0.5, step: 0.001,def: 0.25 },
+      { key: 'c2FreqX', label: 'C2 Freq X',          min: 0,   max: 3,   step: 0.001,def: 0.22 },
+      { key: 'c2FreqY', label: 'C2 Freq Y',          min: 0,   max: 3,   step: 0.001,def: 0.29 },
+    ]
+  },
+
+  // 6) VORTEX GRID — uP = (cellsX, cellsY, baseSpin, tSpinAmp), uQ = (tSpinFreq, -, -, -)
+  vortexgrid: {
+    p: [
+      { key: 'cellsX',   label: 'Cells X',           min: 1,   max: 32,  step: 1,    def: 6 },
+      { key: 'cellsY',   label: 'Cells Y',           min: 1,   max: 32,  step: 1,    def: 6 },
+      { key: 'baseSpin', label: 'Base Spin',         min: -10, max: 10,  step: 0.01, def: 4.0 },
+      { key: 'tSpinAmp', label: 'Spin Amplitude',    min: 0,   max: 10,  step: 0.01, def: 10.0 },
+    ],
+    q: [
+      { key: 'tSpinFreq',label: 'Spin Freq',         min: 0,   max: 5,   step: 0.01, def: 0.75 },
+    ]
+  },
+
+  // 7) DOUBLE GYRE — uP = (A, omega, epsilon, -)
+  doublegyre: {
+    p: [
+      { key: 'A',        label: 'Amplitude A',       min: 0,   max: 2,   step: 0.01, def: 1.0 },
+      { key: 'omega',    label: 'Omega (Hz)',        min: 0,   max: 1,   step: 0.01, def: 0.10 },
+      { key: 'epsilon',  label: 'Epsilon',           min: 0,   max: 0.9, step: 0.001,def: 0.25 },
+      { key: 'pad',      label: '(unused)',          min: 0,   max: 0,   step: 1,    def: 0.0 },
+    ],
+    q: []
+  },
+
+  // 8) SHEAR — uP = (baseU, bandAmp, bandFreq, tShearSpeed), uQ = (vAmp, vFreqX, tVSpeed, -)
+  shear: {
+    p: [
+      { key: 'baseU',      label: 'Base U',          min: -2,  max: 2,   step: 0.01, def: 0.6 },
+      { key: 'bandAmp',    label: 'Band Amplitude',  min: 0,   max: 1,   step: 0.01, def: 0.4 },
+      { key: 'bandFreq',   label: 'Band Frequency',  min: 0,   max: 8,   step: 0.01, def: 1.5 },
+      { key: 'tShearSpeed',label: 'Time Speed',      min: 0,   max: 5,   step: 0.01, def: 0.7 },
+    ],
+    q: [
+      { key: 'vAmp',       label: 'V Amplitude',     min: 0,   max: 1,   step: 0.01, def: 0.15 },
+      { key: 'vFreqX',     label: 'V X Frequency',   min: 0,   max: 8,   step: 0.01, def: 2.0 },
+      { key: 'tVSpeed',    label: 'V Time Speed',    min: 0,   max: 5,   step: 0.01, def: 0.2 },
+    ]
+  },
+
+  // 9) HEX VORTEX — uP = (scale, spinBase, spinAmp, tSpinFreq)
+  hexvortex: {
+    p: [
+      { key: 'scale',    label: 'Hex Scale',         min: 0.5, max: 20,  step: 0.1,  def: 6.0 },
+      { key: 'spinBase', label: 'Base Spin',         min: -5,  max: 5,   step: 0.01, def: 1.0 },
+      { key: 'spinAmp',  label: 'Spin Amplitude',    min: 0,   max: 5,   step: 0.01, def: 0.15 },
+      { key: 'tSpinFreq',label: 'Spin Freq',         min: 0,   max: 5,   step: 0.01, def: 1.0 },
+    ],
+    q: []
+  },
+
+  // 10) JET STREAM — uP = (bandFreq, bandAmp, xFreq, tSpeed), uQ = (transAmp, transFreq, -, -)
+  jetstream: {
+    p: [
+      { key: 'bandFreq',  label: 'Band Frequency',   min: 0,   max: 20,  step: 0.1,  def: 8.0 },
+      { key: 'bandAmp',   label: 'Band Amplitude',   min: 0,   max: 1,   step: 0.01, def: 0.5 },
+      { key: 'xFreq',     label: 'X Frequency',      min: 0,   max: 5,   step: 0.01, def: 2.0 },
+      { key: 'tSpeed',    label: 'Time Speed',       min: 0,   max: 5,   step: 0.01, def: 0.6 },
+    ],
+    q: [
+      { key: 'transAmp',  label: 'Transverse Amp',   min: 0,   max: 1,   step: 0.01, def: 0.2 },
+      { key: 'transFreq', label: 'Transverse Freq',  min: 0,   max: 5,   step: 0.01, def: 0.3 },
+    ]
+  },
+
+  // 11) GALACTIC — uP = (armAmp, armFreq, tArmSpeed, radialMix), uQ = (tangentialWeight, radialWeight, -, -)
+  galactic: {
+    p: [
+      { key: 'armAmp',     label: 'Arm Amplitude',   min: 0,   max: 1,   step: 0.01, def: 0.25 },
+      { key: 'armFreq',    label: 'Arm Frequency',   min: 0,   max: 8,   step: 0.01, def: 3.0 },
+      { key: 'tArmSpeed',  label: 'Arm Time Speed',  min: 0,   max: 5,   step: 0.01, def: 0.4 },
+      { key: 'radialMix',  label: 'Radial Mix',      min: -1,  max: 1,   step: 0.01, def: 0.0 },
+    ],
+    q: [
+      { key: 'tangentialWeight', label: 'Tangential W', min: 0, max: 2, step: 0.01, def: 1.0 },
+      { key: 'radialWeight',     label: 'Radial W',     min: 0, max: 2, step: 0.01, def: 1.0 },
+    ]
+  },
+
+  // 12) CELLULAR — uP = (scale, xFreq, yFreq, tSpeed)
+  cellular: {
+    p: [
+      { key: 'scale',   label: 'Cell Scale',        min: 0.25, max: 12,  step: 0.01, def: 1.0 },
+      { key: 'xFreq',   label: 'X Frequency',       min: 0,    max: 6,   step: 0.01, def: 1.0 },
+      { key: 'yFreq',   label: 'Y Frequency',       min: 0,    max: 6,   step: 0.01, def: 1.0 },
+      { key: 'tSpeed',  label: 'Time Speed',        min: 0,    max: 5,   step: 0.01, def: 1.0 },
+    ],
+    q: []
+  },
+}
+
+// selected mode already in movementMode
+const fieldParams = ref({})   // holds current key→value for the selected field
+
+function initFieldParams(mode) {
+  const sch = FIELD_SCHEMAS[mode]
+  const out = {}
+  if (!sch) return out
+  for (const s of sch.p) out[s.key] = s.def
+  for (const s of sch.q) out[s.key] = s.def
+  return out
+}
+
+function applyFieldParamsToUniforms() {
+  if (!simMat) return
+  const m = movementMode.value
+  const sch = FIELD_SCHEMAS[m]
+  const p = [0,0,0,0], q = [0,0,0,0]
+  if (sch) {
+    sch.p.forEach((s, i) => { if (i<4) p[i] = Number(fieldParams.value[s.key] ?? s.def) })
+    sch.q.forEach((s, i) => { if (i<4) q[i] = Number(fieldParams.value[s.key] ?? s.def) })
+  }
+  simMat.uniforms.uP.value.set(p[0], p[1], p[2], p[3])
+  simMat.uniforms.uQ.value.set(q[0], q[1], q[2], q[3])
+}
 
 function hexToRgb(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -216,6 +415,8 @@ uniform float uDt;
 uniform int uMode;
 uniform int uActiveCount;
 uniform float uSpeedMul;
+uniform vec4 uP;  // primary param pack
+uniform vec4 uQ;  // secondary param pack
 
 vec4 texel1D(sampler2D tex, float idx, vec2 ts){
   float cols = ts.x; float y = floor(idx/cols); float x = idx - y*cols;
@@ -231,71 +432,201 @@ float noise(vec2 p){
 }
 
 // fields (12)
+// Helper constant
+const float TAU = 6.28318530718;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 1) SINE FLOW
+// uP = (cyclesX, cyclesY, tSpeedX, tSpeedY)
+// uQ = (—unused—)
+// ------------------------------------------------------------------------------
 vec2 field_sineflow(vec2 p, float t, vec2 wh){
-  float ax = 6.2831853*(p.y/wh.y) + t*0.35;
-  float ay = 6.2831853*(p.x/wh.x) - t*0.27;
-  vec2 v = vec2(sin(ax), sin(ay)); float L=length(v); return L>1e-6? v/L : vec2(0);
+  float ax = TAU * (uP.x * (p.y/wh.y)) + t * uP.z;
+  float ay = TAU * (uP.y * (p.x/wh.x)) - t * uP.w;
+  vec2 v = vec2(sin(ax), sin(ay));
+  float L = length(v); 
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 2) SWIRL (centered spin with wobble)
+// uP = (wobbleMin, wobbleMax, wobbleSpeed, radialFalloffPow >= 0)
+// uQ = (spinScale,  —, —, —)
+// ------------------------------------------------------------------------------
 vec2 field_swirl(vec2 p, float t, vec2 wh){
-  vec2 d = p - uCenter; float r = length(d)+1e-6; vec2 tang = vec2(-d.y, d.x)/r;
-  float wob = 0.7+0.3*sin(t*0.6); return tang*wob;
+  vec2 d = p - uCenter;
+  float r = length(d) + 1e-6;
+  float wob = mix(uP.x, uP.y, 0.5 + 0.5*sin(t*uP.z));
+  float spin = uQ.x * pow(r / max(wh.x, wh.y), max(uP.w, 0.0));
+  vec2 tang = vec2(-d.y, d.x) / r;
+  vec2 v = tang * (wob + spin);
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 3) CURLISH NOISE (angle from noise)
+// uP = (noiseScale, timeSpeedX, timeSpeedY, angleScaleMult)  // angleScaleMult multiplies 2π
+// uQ = (—unused—)
+// ------------------------------------------------------------------------------
 vec2 field_curlish(vec2 p, float t, vec2 wh){
-  vec2 q=p/wh*4.0 + vec2(t*0.15, -t*0.11); float a=noise(q)*6.2831853; return vec2(cos(a),sin(a));
+  vec2 q = p/wh * uP.x + vec2(t*uP.y, -t*uP.z);
+  float a = noise(q) * TAU * max(uP.w, 0.0);
+  return vec2(cos(a), sin(a));  // already unit-length
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 4) LISSAJOUS-STYLE COUPLED SINES
+// uP = (aX, bX, tAmpX, tFreqX)        // x-channel: sin(2π*(aX*x + bX*y + tAmpX*sin(tFreqX*t)))
+// uQ = (aY, bY, tAmpY, tFreqY)        // y-channel: sin(2π*(aY*x + bY*y + tAmpY*cos(tFreqY*t)))
+// ------------------------------------------------------------------------------
 vec2 field_lissajous(vec2 p, float t, vec2 wh){
-  float x=p.x/wh.x, y=p.y/wh.y;
-  vec2 v=vec2( sin(6.28318*(3.0*x + 0.5*y + 0.05*sin(t))),
-               sin(6.28318*(0.7*x + 2.0*y + 0.08*cos(0.7*t))) );
-  float L=length(v); return L>1e-6? v/L : vec2(0);
+  float x = p.x / wh.x, y = p.y / wh.y;
+  float phx = uP.z * sin(t * uP.w);
+  float phy = uQ.z * cos(t * uQ.w);
+  float vx = sin(TAU * (uP.x * x + uP.y * y + phx));
+  float vy = sin(TAU * (uQ.x * x + uQ.y * y + phy));
+  vec2 v = vec2(vx, vy);
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 5) ORBITS (two moving vortices)
+// uP = (c1AmpX, c1AmpY, c1FreqX, c1FreqY)    // center 1 motion around uCenter
+// uQ = (c2AmpX, c2AmpY, c2FreqX, c2FreqY)    // center 2 motion around uCenter
+// ------------------------------------------------------------------------------
 vec2 field_orbits(vec2 p, float t, vec2 wh){
-  vec2 c1 = uCenter + vec2(0.25*wh.x*sin(t*0.4), 0.2*wh.y*cos(t*0.31));
-  vec2 c2 = uCenter + vec2(0.2*wh.x*cos(t*0.22+2.0), 0.25*wh.y*sin(t*0.29+1.0));
-  vec2 d1=p-c1; float r1=length(d1)+1e-4; vec2 v1=vec2(-d1.y,d1.x)/r1;
-  vec2 d2=p-c2; float r2=length(d2)+1e-4; vec2 v2=vec2(-d2.y,d2.x)/r2;
-  vec2 v=normalize(v1)*0.6 + normalize(v2)*0.4; float L=length(v); return L>1e-6? v/L:vec2(0);
+  vec2 c1 = uCenter + vec2(uP.x*wh.x*sin(t*uP.z),  uP.y*wh.y*cos(t*uP.w));
+  vec2 c2 = uCenter + vec2(uQ.x*wh.x*cos(t*uQ.z),  uQ.y*wh.y*sin(t*uQ.w));
+  vec2 d1 = p - c1; float r1 = length(d1)+1e-6; vec2 v1 = vec2(-d1.y, d1.x)/r1;
+  vec2 d2 = p - c2; float r2 = length(d2)+1e-6; vec2 v2 = vec2(-d2.y, d2.x)/r2;
+  vec2 v = normalize(v1)*0.6 + normalize(v2)*0.4;
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 6) VORTEX GRID (checkerboard spinning cells)
+// uP = (cellsX, cellsY, baseSpin, tSpinAmp)
+// uQ = (tSpinFreq,  —, —, —)
+// ------------------------------------------------------------------------------
 vec2 field_vortexgrid(vec2 p, float t, vec2 wh){
-  vec2 g=(p/wh)*8.0; vec2 cell=floor(g); vec2 local=fract(g)-0.5;
-  float s = mod(cell.x+cell.y,2.0)<1.0 ? 1.0 : -1.0;
-  float ang=atan(local.y,local.x) + s*(1.2+0.2*sin(t));
-  vec2 v=vec2(-sin(ang),cos(ang)); float L=length(v); return L>1e-6? v/L:vec2(0);
+  vec2 g = vec2(uP.x, uP.y);                  // grid resolution
+  vec2 cellCoord = floor((p/wh) * g);
+  vec2 local = fract((p/wh) * g) - 0.5;
+  float parity = mod(cellCoord.x + cellCoord.y, 2.0) < 1.0 ? 1.0 : -1.0;
+  float spin = uP.z + uP.w * sin(t * uQ.x);   // baseSpin + animated component
+  float ang = atan(local.y, local.x) + parity * spin;
+  vec2 v = vec2(-sin(ang), cos(ang));
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 7) DOUBLE GYRE (classic)
+// uP = (A, omega, epsilon, —)    // A scales vertical velocity; omega time freq; epsilon oscillation
+// uQ = (—unused—)
+// ------------------------------------------------------------------------------
 vec2 field_doublegyre(vec2 p, float t, vec2 wh){
-  float A=0.25*wh.y, w=6.28318/10.0, eps=0.25, a=eps*sin(w*t), b=1.0-2.0*eps;
-  float x=p.x/wh.x, y=p.y/wh.y; float f=a*x*x + b*x; float dfdx=2.0*a*x + b;
-  float u = -3.14159*A*sin(3.14159*f)*cos(3.14159*y);
-  float v =  3.14159*A*cos(3.14159*f)*sin(3.14159*y)*dfdx;
-  vec2 vel=vec2(u,v); float L=length(vel); return L>1e-6? vel/L:vec2(0);
+  float A   = (uP.x) * 0.25 * wh.y;
+  float w   = TAU * uP.y;
+  float eps = uP.z;
+  float a = eps * sin(w * t);
+  float b = 1.0 - 2.0 * eps;
+  float x = p.x/wh.x, y = p.y/wh.y;
+  float f    = a*x*x + b*x;
+  float dfdx = 2.0*a*x + b;
+  float u = -3.14159265 * A * sin(3.14159265*f) * cos(3.14159265*y);
+  float v =  3.14159265 * A * cos(3.14159265*f) * sin(3.14159265*y) * dfdx;
+  vec2 vel = vec2(u, v);
+  float L = length(vel);
+  return L>1e-6 ? vel/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+/* 8) SHEAR (horizontal banded flow with vertical wiggles)
+   uP = (baseU, bandAmp, bandFreq, tShearSpeed)    // horizontal component varies by y
+   uQ = (vAmp,  vFreqX,  tVSpeed,  — )            // vertical wiggle varies by x and time
+*/
 vec2 field_shear(vec2 p, float t, vec2 wh){
-  float y=p.y/wh.y;
-  vec2 v=vec2(0.6+0.4*sin(6.28318*y*1.5 + 0.7*t), 0.15*sin(6.28318*(p.x/wh.x*2.0 - 0.2*t)));
-  float L=length(v); return L>1e-6? v/L:vec2(0);
+  float y = p.y/wh.y;
+  float u = uP.x + uP.y * sin(TAU * (uP.z * y) + t * uP.w);
+  float v = uQ.x * sin(TAU * (uQ.y * (p.x/wh.x)) - t * uQ.z);
+  vec2 vel = vec2(u, v);
+  float L = length(vel);
+  return L>1e-6 ? vel/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 9) HEX VORTEX LATTICE
+// uP = (scale, spinBase, spinAmp, tSpinFreq)
+// uQ = (—unused—)
+// ------------------------------------------------------------------------------
 vec2 field_hexvortex(vec2 p, float t, vec2 wh){
-  vec2 q=(p/wh)*6.0; vec2 a=vec2(1.0,0.0); vec2 b=vec2(0.5, 0.8660254*1.1547005);
-  vec2 uv=vec2(dot(q,a), dot(q,b)); vec2 cell=floor(uv); vec2 f=fract(uv)-0.5;
-  float s=mod(cell.x+cell.y,2.0)<1.0?1.0:-1.0; float ang=atan(f.y,f.x)+s*(1.0+0.15*sin(t));
-  vec2 v=vec2(-sin(ang),cos(ang)); float L=length(v); return L>1e-6? v/L:vec2(0);
+  // axial-like projection for hex tiling
+  vec2 q = (p/wh) * max(uP.x, 0.0001);
+  vec2 a = vec2(1.0, 0.0);
+  vec2 b = vec2(0.5, 0.86602540378 * 1.15470053838); // ≈ √3/2 * 2/√3 to balance spacing
+  vec2 uv = vec2(dot(q, a), dot(q, b));
+  vec2 cell = floor(uv);
+  vec2 f    = fract(uv) - 0.5;
+  float parity = mod(cell.x + cell.y, 2.0) < 1.0 ? 1.0 : -1.0;
+  float spin = uP.y + uP.z * sin(t * uP.w);
+  float ang = atan(f.y, f.x) + parity * spin;
+  vec2 v = vec2(-sin(ang), cos(ang));
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 10) JET STREAM (banded flow with transverse oscillation)
+// uP = (bandFreq, bandAmp, xFreq, tSpeed)
+// uQ = (transAmp, transFreq, —, —)
+// ------------------------------------------------------------------------------
 vec2 field_jetstream(vec2 p, float t, vec2 wh){
-  float y=p.y/wh.y;
-  vec2 v=vec2(0.5+0.5*sin(3.14159*(y*8.0 + 0.25*sin(t*0.6))),
-              0.2*sin(3.14159*(p.x/wh.x*2.0 - t*0.3)));
-  float L=length(v); return L>1e-6? v/L:vec2(0);
+  float y = p.y/wh.y;
+  float u = uP.y * sin(3.14159265 * (uP.x * y + 0.25*sin(t * uP.w)));
+  u = 0.5 + u; // bias to keep generally rightward
+  float v = uQ.x * sin(3.14159265 * (uP.z * (p.x/wh.x) - t * uQ.y));
+  vec2 vel = vec2(u, v);
+  float L = length(vel);
+  return L>1e-6 ? vel/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 11) GALACTIC (spiral arms)
+// uP = (armAmp, armFreq, tArmSpeed, radialMix)
+// uQ = (tangentialWeight, radialWeight, —, —)
+// ------------------------------------------------------------------------------
 vec2 field_galactic(vec2 p, float t, vec2 wh){
-  vec2 d=p-uCenter; float r=length(d)+1e-4; float ang=atan(d.y,d.x);
-  float arm=0.25*sin(3.0*ang - 0.4*t); vec2 tang=vec2(-d.y,d.x)/r; vec2 radial=normalize(d);
-  vec2 v=normalize(tang + radial*arm); return v;
+  vec2 d = p - uCenter;
+  float r = length(d) + 1e-4;
+  float ang = atan(d.y, d.x);
+  float arm = uP.x * sin(uP.y * ang - uP.z * t);
+  vec2 tang   = vec2(-d.y, d.x) / r;
+  vec2 radial = normalize(d);
+  vec2 v = normalize(tang * uQ.x + radial * (uQ.y * arm + uP.w));
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 12) CELLULAR (separable sine/cosine cells with time shift)
+// uP = (scale, xFreq, yFreq, tSpeed)
+// uQ = (—unused—)
+// ------------------------------------------------------------------------------
 vec2 field_cellular(vec2 p, float t, vec2 wh){
-  float x=p.x/wh.x*6.28318, y=p.y/wh.y*6.28318;
-  vec2 v=vec2(sin(x)*cos(y+0.3*t), -cos(x)*sin(y-0.2*t));
-  float L=length(v); return L>1e-6? v/L:vec2(0);
+  float x = p.x/wh.x * TAU * max(uP.x, 0.0001);
+  float y = p.y/wh.y * TAU * max(uP.x, 0.0001);
+  vec2 v = vec2(
+    sin(uP.y * x) * cos(uP.z * (y + 0.3*t*uP.w)),
+   -cos(uP.y * x) * sin(uP.z * (y - 0.2*t*uP.w))
+  );
+  float L = length(v);
+  return L>1e-6 ? v/L : vec2(0.0);
 }
+
 vec2 getField(vec2 p,float t,vec2 wh,int m){
   if(m==0) return field_sineflow(p,t,wh);
   if(m==1) return field_swirl(p,t,wh);
@@ -556,6 +887,8 @@ function buildThree({ w, h, count }) {
       uMode: { value: MODE_MAP[movementMode.value] ?? 0 },
       uActiveCount: { value: activeCount.value },
       uSpeedMul: { value: simSpeed.value },
+      uP: { value: new THREE.Vector4(0,0,0,0) },
+      uQ: { value: new THREE.Vector4(0,0,0,0) },
     },
     depthTest: false, depthWrite: false
   })
@@ -664,7 +997,6 @@ function recolorHSV(countOverride) {
 let lastT = 0, t0 = 0
 function step() {
   const now = performance.now()*0.001
-  console.log('step', now)
   if (!t0) { t0 = now; lastT = now }
   const dt = Math.min(0.033, Math.max(0, now - lastT))
   lastT = now
@@ -871,6 +1203,22 @@ onMounted(async () => {
     const hsv = rgbToHsv(hexToRgb(hex))
     hsvEnd.value = { h: hsv.h, s: Math.max(0.1, hsv.s), v: Math.max(0.1, hsv.v) }
   })
+  
+  // onMounted after materials exist:
+  fieldParams.value = initFieldParams(movementMode.value)
+  applyFieldParamsToUniforms()
+
+  watch(movementMode, (m) => {
+    fieldParams.value = initFieldParams(m)
+    simMat.uniforms.uMode.value = MODE_MAP[m] ?? 0
+    applyFieldParamsToUniforms()
+  })
+
+  watch(fieldParams, () => applyFieldParamsToUniforms(), { deep: true })
+
+  watch([minSize, maxSize], ([a,b]) => { if (a > b) [minSize.value, maxSize.value] = [b, a] })
+  watch([minSpeed, maxSpeed], ([a,b]) => { if (a > b) [minSpeed.value, maxSpeed.value] = [b, a] })
+  watch([valueMin, valueMax], ([a,b]) => { if (a > b) [valueMin.value, valueMax.value] = [b, a] })
 
 
   // resize
