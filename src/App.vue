@@ -375,7 +375,7 @@ let posRT = [], accumRT = [], posCur = 0, posNxt = 1, accCur = 0, accNxt = 1
 let speedTex, hsvTex
 let simMat, fadeMat, presentMat, pointsMat
 let indicesAttr, points
-let lightning = null
+// let lightning = null
 let rafId = 0
 
 // mode map to int
@@ -1046,18 +1046,20 @@ function step() {
   renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height)
   renderer.clearColor()
   renderer.clear(true, true, true)
-  renderer.render(fsqScene, cameraFSQ)
+  // renderer.render(fsqScene, cameraFSQ)
 
   // 5) SWAP accum
   ;[accCur, accNxt] = [accNxt, accCur]
+
+  lightning.stepLightning()
 }
 
 function animate() {
   step()
-  if (useLightning && lightning) {
-    const ctx = fxCanvas.value.getContext('2d')
-    lightning.update(performance.now(), ctx)
-  }
+  // if (useLightning && lightning) {
+  //   const ctx = fxCanvas.value.getContext('2d')
+  //   lightning.update(performance.now(), ctx)
+  // }
   rafId = requestAnimationFrame(animate)
 }
 
@@ -1070,14 +1072,14 @@ function recreate(count) {
   sizeCanvas(fxCanvas.value)
 
   const built = buildThree({ w, h, count })
-  // lightning attach/resize
-  if (useLightning && !lightning) {
-    const getCtx  = () => fxCanvas.value.getContext('2d')
-    const getSize = () => ({ W: fxCanvas.value.width, H: fxCanvas.value.height })
-    const getParticles = () => null
-    lightning = useLightning({ getCtx, getSize, getParticles })
-  }
-  lightning && lightning.setSize(fxCanvas.value.width, fxCanvas.value.height)
+  // // lightning attach/resize
+  // if (useLightning && !lightning) {
+  //   const getCtx  = () => fxCanvas.value.getContext('2d')
+  //   const getSize = () => ({ W: fxCanvas.value.width, H: fxCanvas.value.height })
+  //   const getParticles = () => null
+  //   lightning = useLightning({ getCtx, getSize, getParticles })
+  // }
+  // lightning && lightning.setSize(fxCanvas.value.width, fxCanvas.value.height)
 }
 
 function resizeRendererToDisplaySize() {
@@ -1220,11 +1222,16 @@ onMounted(async () => {
   watch([minSpeed, maxSpeed], ([a,b]) => { if (a > b) [minSpeed.value, maxSpeed.value] = [b, a] })
   watch([valueMin, valueMax], ([a,b]) => { if (a > b) [valueMin.value, valueMax.value] = [b, a] })
 
+  lightning.init(
+    renderer,
+    ()=>posRT[posCur],               // supply current positions RT
+    pointsMat.uniforms.uSimTexSize.value, // vec2(cols,rows)
+    new THREE.Vector2(glCanvas.value.width, glCanvas.value.height)
+  );
 
   // resize
   const onResize = () => {
     resizeRendererToDisplaySize()
-    lightning && lightning.setSize(fxCanvas.value.width, fxCanvas.value.height)
   }
   window.addEventListener('resize', onResize)
   fxCanvas.value._onResize = onResize
@@ -1239,6 +1246,951 @@ onBeforeUnmount(() => {
   try { lightning && lightning.dispose && lightning.dispose() } catch {}
   disposeThree()
 })
+const lightning = (() => {
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ⚡ LightningGPU — fully on-GPU particle-hopping lightning for your sim
+  // Paste inside <script setup> after your Three.js setup (renderer, posRT[], etc).
+  // Exposes: lightning.init(...), lightning.hopIfDue(), lightning.renderOverlay(),
+  // lightning.resize(), lightning.resetDischarge()
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /* ========= Parameters (reactive, connect to your UI sliders) ========= */
+  const lightningColor      = ref('#7fc7ff');
+  const baseThicknessPx     = ref(1.5);
+  const hopDelayMs          = ref(60);
+  const splitChance0        = ref(0.35);
+  const splitDecay          = ref(0.55);
+  const maxHopDistPx        = ref(120);
+  const finishMarginPx      = ref(12);
+  const lightUpThicknessPx  = ref(5.0);
+  const lightUpColor        = ref('#aef7ff');
+  const fadeThicknessPx     = ref(0.6);
+  const fadeColor           = ref('#1a2a38');
+
+  // grid cell size for spatial tiles (expose if you want)
+  const gridCellPx          = ref(40);
+
+  /* ========= Tiny FSQ / RT helpers ========= */
+  const FULLQUAD_VERT = /* glsl */`
+  precision highp float;
+  const vec2 P[3]=vec2[3](vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));
+  void main(){ gl_Position=vec4(P[gl_VertexID],0.,1.); }
+  `;
+
+  function makeRowRT(width, { type=THREE.FloatType, format=THREE.RGBAFormat } = {}) {
+    return new THREE.WebGLRenderTarget(width, 1, {
+      type, format, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      depthBuffer: false, stencilBuffer: false,
+      wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+    });
+  }
+  function makeTexRT(w,h,{ type=THREE.FloatType, format=THREE.RGBAFormat, depth=false }={}) {
+    return new THREE.WebGLRenderTarget(w, h, {
+      type, format, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      depthBuffer: depth, stencilBuffer: false,
+      wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+    });
+  }
+  const fsqScene = new THREE.Scene();
+  const fsqMesh  = new THREE.Mesh(new THREE.PlaneGeometry(2,2), null);
+  fsqScene.add(fsqMesh);
+  const fsqCam   = new THREE.Camera();
+  function renderTo(target){
+    renderer.setRenderTarget(target||null);
+    renderer.clear(false,true,false);
+    renderer.render(fsqScene, fsqCam);
+    renderer.setRenderTarget(null);
+  }
+  function makePass(fragmentShader, uniforms={}) {
+    return new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      vertexShader: FULLQUAD_VERT,
+      fragmentShader,
+      uniforms,
+      depthTest:false, depthWrite:false, transparent:false,
+    });
+  }
+
+  /* ========= Bitonic sort (row RG stores {key,idx}) ========= */
+  const bitonicMat = makePass(/* glsl */`
+  precision highp float;
+  out vec4 fc;
+  uniform sampler2D uSrc;
+  uniform float uK, uStage, uStep;
+  vec4 at(float i){ return texture(uSrc, vec2((i+0.5)/uK,0.5)); }
+  void main(){
+    float i=floor(gl_FragCoord.x-0.5);
+    if(i<0.||i>=uK){ fc=vec4(0); return; }
+    float j= i - mod(i, uStep*2.) + mod(i + uStep, uStep*2.);
+    vec4 A=at(i), B=at(j);
+    float dir= mod(floor(i/uStage),2.);
+    bool swap= (dir<.5) ? (A.r>B.r) : (A.r<B.r);
+    fc = swap ? B : A;
+  }`);
+  function bitonicSort(srcRT, tmpRT, K){
+    let cur=srcRT, nxt=tmpRT;
+    fsqMesh.material = bitonicMat;
+    for (let stage=2; stage<=K; stage<<=1){
+      for (let step=stage>>1; step>0; step>>=1){
+        bitonicMat.uniforms.uSrc={value:cur.texture};
+        bitonicMat.uniforms.uK={value:K};
+        bitonicMat.uniforms.uStage={value:stage};
+        bitonicMat.uniforms.uStep={value:step};
+        renderTo(nxt);
+        [cur,nxt]=[nxt,cur];
+      }
+    }
+    return cur; // sorted {key,idx}
+  }
+
+  /* ========= Keying pass: pack (cellKey, idx) ========= */
+  const KEY_FRAG = /* glsl */`
+  precision highp float;
+  out vec4 fc;
+  uniform sampler2D uPos;
+  uniform vec2 uSimTex;   // cols, rows
+  uniform vec2 uWorld;    // W,H
+  uniform vec2 uCell;     // cellW,cellH
+  uniform float uK;
+
+  vec4 texel1D(sampler2D tex, float idx, vec2 ts){
+    float cols=ts.x; float y=floor(idx/cols); float x=idx - y*cols;
+    vec2 uv=(vec2(x,y)+.5)/ts; return texture(tex,uv);
+  }
+  void main(){
+    float idx=floor(gl_FragCoord.x-.5);
+    if(idx<0.||idx>=uK){ fc=vec4(0); return; }
+    vec2 pos=texel1D(uPos, idx, uSimTex).xy;
+    float cx=floor(pos.x/uCell.x);
+    float cy=floor(pos.y/uCell.y);
+    float gcols=floor(uWorld.x/uCell.x);
+    cx=clamp(cx,0.,gcols-1.);
+    cy=clamp(cy,0.,floor(uWorld.y/uCell.y)-1.);
+    float key= cx + cy*gcols;
+    fc=vec4(key, idx, 0., 0.);
+  }`;
+  const keyMat = makePass(KEY_FRAG, {
+    uPos:{value:null}, uSimTex:{value:new THREE.Vector2()}, uWorld:{value:new THREE.Vector2()},
+    uCell:{value:new THREE.Vector2()}, uK:{value:0},
+  });
+
+  /* ========= Cell range via depth argmin/argmax ========= */
+  // We render K GL_POINTS positioned over their cell pixel; depth encodes index.
+  // Small “point cloud” scene:
+  let cellPointScene=null, cellPointCam=null, cellStartMat=null, cellEndMat=null, cellGeom=null;
+  function buildCellPointPipeline(K){
+    if (cellPointScene) return;
+    // geometry with attribute 'aIndex' = 0..K-1
+    const a = new Float32Array(K); for (let i=0;i<K;i++) a[i]=i;
+    cellGeom = new THREE.BufferGeometry();
+    cellGeom.setAttribute('aIndex', new THREE.BufferAttribute(a, 1));
+    cellPointScene = new THREE.Scene();
+    cellPointCam   = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    const CELL_VERT = /* glsl */`
+    precision highp float;
+    layout(location=0) in float aIndex;
+    uniform sampler2D uSorted;
+    uniform float uK;
+    uniform vec2 uGrid; // cols,rows
+    void main(){
+      float i=aIndex;
+      // read key at position i
+      vec2 uv=vec2((i+.5)/uK,.5);
+      vec4 kv=texture(uSorted,uv);
+      float key=kv.r;
+      float gx=mod(key,uGrid.x), gy=floor(key/uGrid.x);
+      vec2 uv2=(vec2(gx+.5,gy+.5)/uGrid)*2.-1.;
+      gl_Position=vec4(uv2,0.,1.);
+      // encode depth as i (smaller i wins)
+      float z=(i+.5)/uK; gl_Position.z = z*2.-1.;
+      gl_PointSize=1.;
+    }`;
+    const CELL_START_FRAG = /* glsl */`
+    precision highp float; out vec4 fc;
+    uniform float uWriteVal; // i
+    void main(){ fc = vec4(uWriteVal, 0., 0., 1.); }`;
+    const CELL_END_FRAG = /* glsl */`
+    precision highp float; out vec4 fc;
+    uniform float uWriteVal;
+    void main(){ fc = vec4(uWriteVal, 0., 0., 1.); }`;
+    cellStartMat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: CELL_VERT, fragmentShader: CELL_START_FRAG,
+      uniforms:{ uSorted:{value:null}, uK:{value:K}, uGrid:{value:new THREE.Vector2()}, uWriteVal:{value:0}},
+      depthTest:true, depthWrite:true,
+    });
+    cellEndMat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: CELL_VERT, fragmentShader: CELL_END_FRAG,
+      uniforms:{ uSorted:{value:null}, uK:{value:K}, uGrid:{value:new THREE.Vector2()}, uWriteVal:{value:0}},
+      depthTest:true, depthWrite:true,
+    });
+    const ptsStart = new THREE.Points(cellGeom, cellStartMat);
+    const ptsEnd   = new THREE.Points(cellGeom, cellEndMat);
+    ptsStart.name='cellStart'; ptsEnd.name='cellEnd';
+    cellPointScene.add(ptsStart);
+    cellPointScene.add(ptsEnd);
+  }
+  function writeCellRanges(sortedRT, gridCols, gridRows, cellStartRT, cellEndRT){
+    // START (argmin): smaller depth wins → depthTest LESS, depth cleared to 1
+    cellStartMat.uniforms.uSorted.value = sortedRT.texture;
+    cellStartMat.uniforms.uGrid.value.set(gridCols, gridRows);
+    renderer.setRenderTarget(cellStartRT);
+    renderer.getContext().depthFunc(renderer.getContext().LESS);
+    renderer.clear(true,true,true);
+    renderer.render(cellPointScene.getObjectByName('cellStart'), cellPointCam);
+    renderer.setRenderTarget(null);
+    // END (argmax): render with reversed depth so later indices win (we flip Z)
+    // Quick trick: reuse same vert but reverse logic by clearing depth to 0 and using GREATER
+    cellEndMat.uniforms.uSorted.value = sortedRT.texture;
+    cellEndMat.uniforms.uGrid.value.set(gridCols, gridRows);
+    const gl = renderer.getContext();
+    renderer.setRenderTarget(cellEndRT);
+    gl.depthFunc(gl.GREATER);
+    gl.clearDepth(0.0);
+    renderer.clear(true,true,true);
+    renderer.render(cellPointScene.getObjectByName('cellEnd'), cellPointCam);
+    // restore defaults
+    gl.clearDepth(1.0);
+    gl.depthFunc(gl.LESS);
+    renderer.setRenderTarget(null);
+  }
+
+  /* ========= Candidate reduction (per tip) ========= */
+  const CANDIDATE_FRAG = /* glsl */`
+  precision highp float; out vec4 fc;
+  uniform sampler2D uTips;        // tipsCap×1: {idx, prob, alive, _}
+  uniform sampler2D uPos;         // positions
+  uniform sampler2D uSorted;      // row K: {key, idx}
+  uniform sampler2D uStart;       // cellStart: start index (in sorted)
+  uniform sampler2D uEnd;         // cellEnd:   end index  (in sorted)
+  uniform vec2  uSimTex;          // cols,rows
+  uniform vec2  uWorld;           // W,H
+  uniform vec2  uCell;            // cellW,cellH
+  uniform vec2  uGrid;            // gridCols,gridRows
+  uniform float uMaxDist;         // px
+  uniform float uTipsCap;
+  uniform float uK;
+
+  vec4 texel1D(sampler2D tex, float idx, vec2 ts){
+    float cols=ts.x; float y=floor(idx/cols); float x=idx - y*cols;
+    vec2 uv=(vec2(x,y)+.5)/ts; return texture(tex,uv);
+  }
+  vec2 posOf(float idx){ return texel1D(uPos, idx, uSimTex).xy; }
+  float startOf(float cx,float cy){ return texture(uStart, (vec2(cx,cy)+.5)/uGrid).r; }
+  float endOf  (float cx,float cy){ return texture(uEnd,   (vec2(cx,cy)+.5)/uGrid).r; }
+
+  void main(){
+    float tipI=floor(gl_FragCoord.x-.5);
+    if(tipI<0.||tipI>=uTipsCap){ fc=vec4(-1.); return; }
+    vec4 tip=texture(uTips, vec2((tipI+.5)/uTipsCap, .5));
+    if(tip.b<.5){ fc=vec4(-1.); return; } // not alive
+    float fromIdx=tip.r;
+    vec2  A=posOf(fromIdx);
+    float maxD2=uMaxDist*uMaxDist;
+
+    vec2 c0=floor(A/uCell);
+    float Rcx=ceil(uMaxDist/uCell.x);
+    float Rcy=ceil(uMaxDist/uCell.y);
+
+    float bestIdx=-1., bestD2=maxD2;
+    for(float dy=-64.; dy<=64.; dy+=1.){  // bound
+      if(dy<-Rcy||dy>Rcy) continue;
+      float cy=c0.y+dy; if(cy<0.||cy>=uGrid.y) continue;
+      for(float dx=0.; dx<=64.; dx+=1.){
+        if(dx>Rcx) continue;
+        float cx=c0.x+dx; if(cx<0.||cx>=uGrid.x) continue;
+        float s=startOf(cx,cy), e=endOf(cx,cy);
+        if(s<0.||e<=s) continue;
+        for(float k=0.; k<4096.; k+=1.){
+          float ii=s+k; if(ii>=e) break;
+          vec4 kv = texture(uSorted, vec2((ii+.5)/uK, .5));
+          float j  = kv.g;
+          if(j==fromIdx) continue;
+          vec2 B = posOf(j);
+          if(B.x<=A.x) continue;
+          vec2 d=B-A; float d2=dot(d,d);
+          if(d2<bestD2){ bestD2=d2; bestIdx=j; }
+        }
+      }
+    }
+    // write bestIdx, bestD2, nextProb, alive=1
+    float nextProb = tip.g * ${/* decayed later in split pass if needed */''} 1.0;
+    fc = vec4(bestIdx, bestD2, nextProb, 1.0);
+  }`;
+  const candidateMat = makePass(CANDIDATE_FRAG, {
+    uTips:{value:null}, uPos:{value:null}, uSorted:{value:null},
+    uStart:{value:null}, uEnd:{value:null},
+    uSimTex:{value:new THREE.Vector2()}, uWorld:{value:new THREE.Vector2()},
+    uCell:{value:new THREE.Vector2()}, uGrid:{value:new THREE.Vector2()},
+    uMaxDist:{value:0}, uTipsCap:{value:0}, uK:{value:0},
+  });
+
+  /* ========= Emit counts (0/1/2), Scan (exclusive), Scatter (tips+segments) ========= */
+  const EMIT_COUNTS_FRAG = /* glsl */`
+  precision highp float; out vec4 fc;
+  uniform sampler2D uCand; uniform float uTipsCap;
+  float rnd(float x){ return fract(sin(x*43758.5453)*12345.6789); }
+  void main(){
+    float i=floor(gl_FragCoord.x-.5);
+    if(i<0.||i>=uTipsCap){ fc=vec4(0); return; }
+    vec4 c=texture(uCand, vec2((i+.5)/uTipsCap,.5));
+    float bestIdx=c.r, prob=c.b;
+    float count=0.;
+    if(bestIdx>=0.){ count=1.; if(rnd(i+prob*9973.)<prob) count=2.; }
+    fc=vec4(count,0,0,1);
+  }`;
+  const emitCountsMat = makePass(EMIT_COUNTS_FRAG, { uCand:{value:null}, uTipsCap:{value:0} });
+
+  // Scan up/down (exclusive)
+  const SCAN_UP_FRAG = /* glsl */`
+  precision highp float; out vec4 fc;
+  uniform sampler2D uSrc; uniform float uN; uniform float uStride;
+  float at(float i){ return texture(uSrc, vec2((i+.5)/uN,.5)).r; }
+  void main(){
+    float i=floor(gl_FragCoord.x-.5);
+    if(i<0.||i>=uN){ fc=vec4(0); return; }
+    float s=uStride;
+    if(mod(i+1.,2.*s)<.5){ fc=vec4(at(i),0,0,1); return; }
+    float left=i-s;
+    fc=vec4(at(left)+at(i),0,0,1);
+  }`;
+  const SCAN_DOWN_FRAG = /* glsl */`
+  precision highp float; out vec4 fc;
+  uniform sampler2D uSrc; uniform float uN; uniform float uStride;
+  float at(float i){ return texture(uSrc, vec2((i+.5)/uN,.5)).r; }
+  void main(){
+    float i=floor(gl_FragCoord.x-.5);
+    if(i<0.||i>=uN){ fc=vec4(0); return; }
+    float s=uStride;
+    if(mod(i+1.,2.*s)<.5){ fc=vec4(at(i),0,0,1); return; }
+    float left=i-s;
+    float tLeft=at(left), tHere=at(i);
+    float newHere=tLeft+tHere;
+    fc=vec4(newHere,0,0,1);
+  }`;
+  const SCAN_DOWN_LEFT_FRAG = /* glsl */`
+  precision highp float; out vec4 fc;
+  uniform sampler2D uSrc; uniform float uN; uniform float uStride;
+  float at(float i){ return texture(uSrc, vec2((i+.5)/uN,.5)).r; }
+  void main(){
+    float i=floor(gl_FragCoord.x-.5);
+    if(i<0.||i>=uN){ fc=vec4(0); return; }
+    float s=uStride;
+    bool isLeft = mod(i+s+1.,2.*s)<.5;
+    if(!isLeft){ fc=vec4(at(i),0,0,1); return; }
+    float right=i+s;
+    float tRight=at(right);
+    fc=vec4(tRight,0,0,1);
+  }`;
+  const scanUpMat   = makePass(SCAN_UP_FRAG, {uSrc:{value:null}, uN:{value:0}, uStride:{value:1}});
+  const scanDownMat = makePass(SCAN_DOWN_FRAG, {uSrc:{value:null}, uN:{value:0}, uStride:{value:1}});
+  const scanDownLMat= makePass(SCAN_DOWN_LEFT_FRAG, {uSrc:{value:null}, uN:{value:0}, uStride:{value:1}});
+  function scanExclusiveRow(srcRT, tmpRT, N){
+    // upsweep
+    fsqMesh.material=scanUpMat;
+    let cur=srcRT, nxt=tmpRT;
+    for (let s=1; s<N; s<<=1){ scanUpMat.uniforms.uSrc.value=cur.texture; scanUpMat.uniforms.uN.value=N; scanUpMat.uniforms.uStride.value=s; renderTo(nxt); [cur,nxt]=[nxt,cur]; }
+    // set last to 0
+    const setLastMat=makePass(/* glsl */`
+    precision highp float; out vec4 fc; uniform sampler2D uSrc; uniform float uN;
+    void main(){ float i=floor(gl_FragCoord.x-.5); float v=texture(uSrc, vec2((i+.5)/uN,.5)).r; if(i==uN-1.) v=0.; fc=vec4(v,0,0,1); }`,
+    {uSrc:{value:cur.texture}, uN:{value:N}});
+    fsqMesh.material=setLastMat; renderTo(nxt); [cur,nxt]=[nxt,cur];
+    // downsweep
+    for (let s=N>>1; s>=1; s>>=1){ 
+      fsqMesh.material=scanDownMat;
+      scanDownMat.uniforms.uSrc.value=cur.texture; scanDownMat.uniforms.uN.value=N; scanDownMat.uniforms.uStride.value=s; renderTo(nxt); [cur,nxt]=[nxt,cur];
+      fsqMesh.material=scanDownLMat;
+      scanDownLMat.uniforms.uSrc.value=cur.texture; scanDownLMat.uniforms.uN.value=N; scanDownLMat.uniforms.uStride.value=s; renderTo(nxt); [cur,nxt]=[nxt,cur];
+    }
+    return cur;
+  }
+
+  /* ========= Line renderer (instanced quads) ========= */
+  function makeLineGeo(){ // 6 vertices per instance (two tris), attribute 'corner'
+    const quad=new Float32Array([ -1,-1, 1,-1, 1,1,  -1,-1, 1,1, -1,1 ]);
+    const g=new THREE.InstancedBufferGeometry();
+    g.setAttribute('corner', new THREE.BufferAttribute(quad,2));
+    // dummy pos attr (unused)
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6*3),3));
+    g.instanceCount=0; return g;
+  }
+  const LINE_VERT = /* glsl */`
+  precision highp float;
+  in vec2 corner;
+  uniform sampler2D uPos; uniform vec2 uSimTex; uniform vec2 uWorld;
+  uniform sampler2D uSegBuf; uniform float uSegCount;
+  uniform float uThickness;
+  out float vSegId;
+
+  vec4 texel1D(sampler2D tex, float idx, vec2 ts){
+    float cols=ts.x; float y=floor(idx/cols); float x=idx - y*cols;
+    vec2 uv=(vec2(x,y)+.5)/ts; return texture(tex,uv);
+  }
+  vec2 posOf(float idx){ return texel1D(uPos, idx, uSimTex).xy; }
+
+  void main(){
+    float id=float(gl_InstanceID);
+    if(id>=uSegCount){ gl_Position=vec4(0); return; }
+    vec4 seg = texture(uSegBuf, vec2((id+.5)/uSegCount, .5));
+    vec2 A=posOf(seg.r), B=posOf(seg.g);
+    vec2 d=B-A; float L=max(length(d),1e-4); vec2 n=normalize(vec2(-d.y,d.x));
+    float halfW=uThickness*.5;
+    vec2 C=mix(A,B,(corner.x+1.)*.5);
+    vec2 P=C + n*(corner.y*halfW);
+    vec2 ndc=(P/uWorld)*2.-1.; ndc.y=-ndc.y;
+    gl_Position=vec4(ndc,0.,1.);
+    vSegId=id;
+  }`;
+  const LINE_FRAG = /* glsl */`
+  precision highp float; out vec4 fc;
+  uniform vec3 uColor, uLightUpColor, uFadeColor;
+  uniform float uThickness, uLightUpThickness, uFadeThickness;
+  uniform sampler2D uWinner; uniform float uSegCount;
+  in float vSegId;
+  void main(){
+    float w = texture(uWinner, vec2((vSegId+.5)/uSegCount, .5)).r;
+    bool win = w>.5;
+    vec3 col = win ? uLightUpColor : uFadeColor;
+    if (w==0.) col = uColor;
+    fc = vec4(col, 1.0);
+  }`;
+  // let lineGeo=null, lineMat=null, lineMesh=null;
+
+  /* ========= LightningGPU object ========= */
+  // ───────────── private mutable state ─────────────
+  const state = {
+    // RTs
+    keyA: null, keyB: null, sorted: null,
+    startRT: null, endRT: null,
+    tipsA: null, tipsB: null, candRT: null,
+    emitCountRT: null, emitTmpRT: null, emitBaseRT: null,
+    segBufRT: null, winnerRT: null, visitedRT: null,
+
+    // sizes / caps
+    K: 0, tipsCap: 512, maxSegs: 8192,
+    gridCols: 0, gridRows: 0,
+
+    // counters / flags
+    liveTips: 0, segCount: 0, lastHop: 0, resolving: false, resolveT: 0,
+
+    // deps
+    getPosRT: null,
+    simTexSize: null,
+    worldSize: null,
+  };
+
+  // line renderer objects (private)
+  let lineGeo = null, lineMat = null, lineMesh = null;
+
+  // ───────────── public methods ─────────────
+  function init(renderer_, getPosRT, simTexSize, worldSize) {
+    // sizes
+    const K = (simTexSize.x * simTexSize.y) | 0;
+    state.K = K;
+    const W = worldSize.x, H = worldSize.y;
+    state.gridCols = Math.ceil(W / gridCellPx.value);
+    state.gridRows = Math.ceil(H / gridCellPx.value);
+
+    // RTs
+    state.keyA = makeRowRT(K);
+    state.keyB = makeRowRT(K);
+    state.startRT = makeTexRT(state.gridCols, state.gridRows, { depth: true });
+    state.endRT   = makeTexRT(state.gridCols, state.gridRows, { depth: true });
+    state.tipsA   = makeRowRT(state.tipsCap);
+    state.tipsB   = makeRowRT(state.tipsCap);
+    state.candRT  = makeRowRT(state.tipsCap);
+    state.emitCountRT = makeRowRT(state.tipsCap, { format: THREE.RedFormat });
+    state.emitTmpRT   = makeRowRT(state.tipsCap, { format: THREE.RedFormat });
+    state.emitBaseRT_A  = makeRowRT(state.tipsCap, { format: THREE.RedFormat });
+    state.emitBaseRT_B  = makeRowRT(state.tipsCap, { format: THREE.RedFormat });
+    state.emitBaseIndex = 0;
+    state.segBufRT    = makeRowRT(state.maxSegs);
+    state.winnerRT    = makeRowRT(state.maxSegs, { format: THREE.RedFormat });
+    state.visitedRT   = makeTexRT(simTexSize.x, simTexSize.y, { type: THREE.UnsignedByteType });
+    state.lightningRT = new THREE.WebGLRenderTarget(W, H, {
+      type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
+    });
+
+    // instanced line renderer
+    if (!lineGeo) lineGeo = makeLineGeo();
+    if (!lineMat) {
+      lineMat = new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        vertexShader: LINE_VERT,
+        fragmentShader: LINE_FRAG,
+        uniforms: {
+          uPos:              { value: getPosRT().texture },
+          uSimTex:           { value: simTexSize },
+          uWorld:            { value: worldSize },
+          uSegBuf:           { value: state.segBufRT.texture },
+          uSegCount:         { value: 0 },
+          uColor:            { value: new THREE.Color(lightningColor.value) },
+          uLightUpColor:     { value: new THREE.Color(lightUpColor.value) },
+          uFadeColor:        { value: new THREE.Color(fadeColor.value) },
+          uThickness:        { value: baseThicknessPx.value },
+          uLightUpThickness: { value: lightUpThicknessPx.value }, // ← fix: Px
+          uFadeThickness:    { value: fadeThicknessPx.value },
+          uWinner:           { value: state.winnerRT.texture },
+        },
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        blending: THREE.AdditiveBlending, // or NormalBlending if preferred
+      });
+    }
+    if (!lineMesh) {
+      lineMesh = new THREE.Mesh(lineGeo, lineMat);
+      pointsScene.add(lineMesh); // overlay in same scene
+    }
+
+    // cell-range pipeline (build once with K)
+    buildCellPointPipeline(K);
+
+    // seed tips & clear buffers
+    resetDischarge();
+    console.log('Discharge reset');
+
+    logTipCountGPU(renderer, state.tipsA, state.tipsCap);
+    logTipCountGPU(renderer, state.tipsB, state.tipsCap);
+
+    // deps
+    state.getPosRT = getPosRT;
+    state.simTexSize = simTexSize;
+    state.worldSize = worldSize;
+  }
+
+  function resetDischarge() {
+    state.liveTips = 8; // starters
+    // init tipsA [0..liveTips): {idx, prob, alive, _}
+    const data = new Float32Array(state.tipsCap * 4);
+    for (let i = 0; i < state.liveTips; i++) {
+      data[i*4+0] = i;                        // seed index (left-ish ones will be chosen first hop)
+      data[i*4+1] = splitChance0.value;       // initial split probability
+      data[i*4+2] = 1.0;                      // alive
+      data[i*4+3] = 0.0;
+    }
+    const dt = new THREE.DataTexture(data, state.tipsCap, 1, THREE.RGBAFormat, THREE.FloatType);
+    dt.needsUpdate = true;
+    const copyMat = makePass(/*glsl*/`
+      precision highp float; out vec4 fc; uniform sampler2D uSrc; uniform float uW;
+      void main(){ fc = texture(uSrc, vec2(gl_FragCoord.x / uW, 0.5)); }`,
+      { uSrc: { value: dt }, uW: { value: state.tipsCap } });
+    fsqMesh.material = copyMat; renderTo(state.tipsA);
+
+    // clear seg/visited/winner
+    renderer.setRenderTarget(state.segBufRT); renderer.clearColor(); renderer.clear(true,true,false); renderer.setRenderTarget(null);
+    renderer.setRenderTarget(state.visitedRT); renderer.clearColor(); renderer.clear(true,true,false); renderer.setRenderTarget(null);
+    renderer.setRenderTarget(state.winnerRT); renderer.clearColor(); renderer.clear(true,true,false); renderer.setRenderTarget(null);
+
+    state.segCount = 0;
+    state.resolving = false;
+    state.resolveT = 0;
+    state.lastHop = 0;
+  }
+
+  function hopIfDue(nowMs) {
+    if (nowMs - state.lastHop < hopDelayMs.value) return;
+    // console.log('LightningGPU hop at', nowMs);
+    state.lastHop = nowMs;
+
+    // 1) key particles (cell key, idx)
+    keyMat.uniforms.uPos.value = state.getPosRT().texture;
+    keyMat.uniforms.uSimTex.value.copy(state.simTexSize);
+    keyMat.uniforms.uWorld.value.copy(state.worldSize);
+    keyMat.uniforms.uCell.value.set(gridCellPx.value, gridCellPx.value);
+    keyMat.uniforms.uK.value = state.K;
+    fsqMesh.material = keyMat; renderTo(state.keyA);
+    
+    // 2) sort by key
+    const sorted = bitonicSort(state.keyA, state.keyB, state.K);
+    state.sorted = sorted;
+
+    // 3) cell ranges via depth argmin/argmax
+    writeCellRanges(sorted, state.gridCols, state.gridRows, state.startRT, state.endRT);
+
+    // 4) nearest-right candidate per tip
+    candidateMat.uniforms.uTips.value    = state.tipsA.texture;
+    candidateMat.uniforms.uPos.value     = state.getPosRT().texture;
+    candidateMat.uniforms.uSorted.value  = sorted.texture;
+    candidateMat.uniforms.uStart.value   = state.startRT.texture;
+    candidateMat.uniforms.uEnd.value     = state.endRT.texture;
+    candidateMat.uniforms.uSimTex.value.copy(state.simTexSize);
+    candidateMat.uniforms.uWorld.value.copy(state.worldSize);
+    candidateMat.uniforms.uCell.value.set(gridCellPx.value, gridCellPx.value);
+    candidateMat.uniforms.uGrid.value.set(state.gridCols, state.gridRows);
+    candidateMat.uniforms.uMaxDist.value = maxHopDistPx.value;
+    candidateMat.uniforms.uTipsCap.value = state.tipsCap;
+    candidateMat.uniforms.uK.value       = state.K;
+    fsqMesh.material = candidateMat; renderTo(state.candRT);
+    
+    // 5) emit counts (0/1/2)
+    emitCountsMat.uniforms.uCand.value = state.candRT.texture;
+    emitCountsMat.uniforms.uTipsCap.value = state.tipsCap;
+    fsqMesh.material = emitCountsMat; renderTo(state.emitCountRT);
+
+    // 6) exclusive scan → bases (if you compact; here we keep simple 1:1 packing)
+    const bases = scanExclusiveRow(state.emitCountRT, state.emitTmpRT, state.tipsCap);
+    const copyBase = makePass(/*glsl*/`
+      precision highp float; out vec4 fc; uniform sampler2D uSrc; uniform float uW;
+      void main(){ fc = texture(uSrc, vec2(gl_FragCoord.x / uW, 0.5)); }`,
+      { uSrc: { value: bases.texture }, uW: { value: state.tipsCap } });
+    copyBase.uniforms.uSrc.value = bases.texture;
+    fsqMesh.material = copyBase; renderTo(state.emitBaseRT);
+
+    // after hopIfDue() or after scatter()
+    logTipCountGPU(renderer, state.tipsA, state.tipsCap);
+    logTipCountGPU(renderer, state.tipsB, state.tipsCap);
+
+    // ↓ Paste this function call right here:
+    // logSegmentCountGPU(renderer, bases, state.emitCountRT, state.tipsCap);
+
+    // // 6) exclusive scan → bases (if you compact; here we keep simple 1:1 packing)
+    // const bases = scanExclusiveRow(state.emitCountRT, state.emitTmpRT, state.tipsCap);
+    // const copyBase = makePass(/*glsl*/`
+    //   precision highp float; out vec4 fc; uniform sampler2D uSrc; uniform float uW;
+    //   void main(){ fc = texture(uSrc, vec2(gl_FragCoord.x / uW, 0.5)); }`,
+    //   { uSrc: { value: bases.texture }, uW: { value: state.tipsCap } });
+    // copyBase.uniforms.uSrc.value = bases.texture;
+    // fsqMesh.material = copyBase; renderTo(state.emitBaseRT);
+    
+    // 7) scatter first emits into tipsB (simple: pack to same indices) + write segments
+    const SCATTER_TIPS_FRAG = /* glsl */`
+      precision highp float; out vec4 fc;
+      uniform sampler2D uOldTips, uCand, uCounts;
+      uniform float uTipsCap, uSplitDecay;
+      void main(){
+        float i=floor(gl_FragCoord.x-.5);
+        if(i<0.||i>=uTipsCap){ fc=vec4(0); return; }
+        float cnt=texture(uCounts, vec2((i+.5)/uTipsCap,.5)).r;
+        if(cnt<.5){ fc=vec4(0); return; }
+        vec4 c=texture(uCand, vec2((i+.5)/uTipsCap,.5));
+        fc = vec4(c.r, max(c.b*uSplitDecay, 0.0), 1.0, 0.0);
+      }`;
+    const scatterTipsMat = makePass(SCATTER_TIPS_FRAG, {
+      uOldTips:   { value: state.tipsA.texture },
+      uCand:      { value: state.candRT.texture },
+      uCounts:    { value: state.emitCountRT.texture },
+      uTipsCap:   { value: state.tipsCap },
+      uSplitDecay:{ value: splitDecay.value },
+    });
+    fsqMesh.material = scatterTipsMat; renderTo(state.tipsB);
+
+    const SCATTER_SEGS_FRAG = /* glsl */`
+      precision highp float; out vec4 fc;
+      uniform sampler2D uOldTips, uCand, uCounts;
+      uniform float uTipsCap, uNowMs;
+      void main(){
+        float i=floor(gl_FragCoord.x-.5);
+        if(i<0.||i>=uTipsCap){ fc=vec4(0); return; }
+        float cnt=texture(uCounts, vec2((i+.5)/uTipsCap,.5)).r;
+        if(cnt<.5){ fc=vec4(0); return; }
+        vec4 tip=texture(uOldTips, vec2((i+.5)/uTipsCap,.5));
+        vec4 c  =texture(uCand,    vec2((i+.5)/uTipsCap,.5));
+        fc = vec4(tip.r, c.r, uNowMs, 0.0); // (fromIdx,toIdx,time,flags)
+      }`;
+    const scatterSegsMat = makePass(SCATTER_SEGS_FRAG, {
+      uOldTips: { value: state.tipsA.texture },
+      uCand:    { value: state.candRT.texture },
+      uCounts:  { value: state.emitCountRT.texture },
+      uTipsCap: { value: state.tipsCap },
+      uNowMs:   { value: nowMs },
+    });
+    fsqMesh.material = scatterSegsMat; renderTo(state.segBufRT);
+
+    // swap tips
+    [state.tipsA, state.tipsB] = [state.tipsB, state.tipsA];
+    state.liveTips = state.tipsCap; // (keeping simple 1:1 packing in this trimmed version)
+
+    // (winner detection/propagation omitted here for brevity; you can add the propagation passes and write winner mask to state.winnerRT)
+    state.resolving = true; state.resolveT = 0;
+  }
+
+  function ensureSafeLightningTarget(state) {
+    const cur = renderer.getRenderTarget();
+    const badRTs = [
+      state && state.segBufRT,
+      state && state.winnerRT,
+      // if your positions are an RT too, include the current one:
+      posRT && posRT[posCur],
+    ].filter(Boolean);
+
+    if (cur && badRTs.some(rt => rt && cur.texture === rt.texture)) {
+      console.warn('⚠️ Feedback hazard: switching lightning draw to the backbuffer.',
+                  { current: cur, segBuf: state.segBufRT, winner: state.winnerRT, pos: posRT[posCur] });
+      renderer.setRenderTarget(null); // draw to screen / backbuffer
+    }
+  }
+
+  function logSegmentCountGPU(renderer, baseRT, countRT, N) {
+    if (!baseRT || !baseRT.texture || !countRT || !countRT.texture) {
+      console.warn('[Lightning] Segment count skipped — missing inputs');
+      return;
+    }
+
+    const S = (state._segLog ||= {});
+    S.rt ||= new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.UnsignedByteType,  // RGBA8 — always supported
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+
+    if (!S.mat) {
+      const vert = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec2 uv;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position, 1.0);
+        }`;
+
+      // Packs total (base[last] + count[last]) into RG = hi/lo bytes
+      const frag = `
+        precision highp float;
+        varying vec2 vUv;
+        uniform sampler2D uBase, uCount;
+        uniform float uN;
+        void main() {
+          float last = uN - 1.0;
+          // fetch last base + last count
+          float baseLast  = texture2D(uBase,  vec2((last + 0.5) / uN, 0.5)).r;
+          float countLast = texture2D(uCount, vec2((last + 0.5) / uN, 0.5)).r;
+          float total = baseLast + countLast;
+
+          // pack into two bytes
+          float hi = floor(total / 256.0);
+          float lo = total - hi * 256.0;
+          gl_FragColor = vec4(hi / 255.0, lo / 255.0, 0.0, 1.0);
+        }`;
+
+      S.mat = new THREE.RawShaderMaterial({
+        vertexShader: vert,
+        fragmentShader: frag,
+        uniforms: {
+          uBase:  { value: null },
+          uCount: { value: null },
+          uN:     { value: 0 },
+        },
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.NoBlending,
+        transparent: false,
+      });
+
+      S.geom = new THREE.PlaneGeometry(2, 2);
+      S.mesh = new THREE.Mesh(S.geom, S.mat);
+      S.scene = new THREE.Scene();
+      S.scene.add(S.mesh);
+      S.cam = new THREE.Camera();
+    }
+
+    // bind inputs
+    S.mat.uniforms.uBase.value  = baseRT.texture;   // the scan result (bases)
+    S.mat.uniforms.uCount.value = countRT.texture;  // emitCountRT
+    S.mat.uniforms.uN.value     = N;
+
+    // draw to the 1×1 RGBA8 target
+    renderer.setRenderTarget(S.rt);
+    renderer.render(S.scene, S.cam);
+    renderer.setRenderTarget(null);
+
+    // read back packed bytes
+    const gl = renderer.getContext();
+    const buf = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+
+    const hi = buf[0];
+    const lo = buf[1];
+    const total = hi * 256 + lo;
+
+    console.log(`[Lightning] Segments emitted this hop: ${total}`);
+  }
+
+  // Counts active tips where ALIVE = (tip.b > 0.5)
+  // tipsRT: the current tips texture (e.g. state.tipsA)
+  // tipsCap: width (number of tips in the 1×N row)
+  function logTipCountGPU(renderer, tipsRT, tipsCap) {
+    if (!tipsRT || !tipsRT.texture) {
+      console.warn('[Lightning] tipsRT is null');
+      return;
+    }
+
+    // cache re-usable objects on your global "state"
+    const S = (state._tipLog ||= {});
+    S.rt ||= new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.UnsignedByteType,   // RGBA8 — portable
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+
+    if (!S.mat) {
+      const vert = `
+        precision highp float;
+        attribute vec3 position; attribute vec2 uv;
+        varying vec2 vUv;
+        void main(){ vUv = uv; gl_Position = vec4(position, 1.0); }`;
+
+      // NOTE: alive test is tip.b > 0.5  (B channel)
+      // Scans first 4096 tips; increase loop bound if your tipsCap is larger
+      const frag = `
+        precision highp float;
+        varying vec2 vUv;
+        uniform sampler2D uTips;
+        uniform float uN;
+        void main(){
+          float cnt = 0.0;
+          for (int i = 0; i < 4096; ++i) {
+            float idx = float(i);
+            if (idx >= uN) break;
+            vec4 tip = texture2D(uTips, vec2((idx + 0.5)/uN, 0.5));
+            if (tip.b > 0.5) cnt += 1.0;  // <-- ALIVE = B channel
+          }
+          // pack cnt into RG (hi/lo bytes)
+          float hi = floor(cnt / 256.0);
+          float lo = cnt - hi * 256.0;
+          gl_FragColor = vec4(hi/255.0, lo/255.0, 0.0, 1.0);
+        }`;
+
+      S.mat = new THREE.RawShaderMaterial({
+        vertexShader: vert,
+        fragmentShader: frag,
+        uniforms: { uTips: { value: null }, uN: { value: 0 } },
+        depthTest: false, depthWrite: false, blending: THREE.NoBlending, transparent: false,
+      });
+
+      S.geom = new THREE.PlaneGeometry(2, 2);
+      S.mesh = new THREE.Mesh(S.geom, S.mat);
+      S.scene = new THREE.Scene();
+      S.scene.add(S.mesh);
+      S.cam = new THREE.Camera();
+    }
+
+    // bind inputs
+    S.mat.uniforms.uTips.value = tipsRT.texture;
+    S.mat.uniforms.uN.value    = tipsCap;
+
+    // render to 1×1
+    renderer.setRenderTarget(S.rt);
+    renderer.render(S.scene, S.cam);
+    renderer.setRenderTarget(null);
+
+    // read back as UNSIGNED_BYTE and unpack
+    const gl = renderer.getContext();
+    const buf = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const hi = buf[0], lo = buf[1];
+    const tipCount = hi * 256 + lo;
+
+    console.log(`[Lightning] Active tips (B>0.5): ${tipCount}`);
+  }
+
+
+  function renderOverlay(nowMs, dt) {
+    if (state.resolving) state.resolveT = Math.min(1, state.resolveT + dt / 250);
+
+    ensureSafeLightningTarget(state);
+
+    // update line uniforms and draw overlay
+    if (lineMat) {
+      lineMat.uniforms.uPos.value = state.getPosRT().texture;
+      lineMat.uniforms.uWorld.value.copy(state.worldSize);
+      lineMat.uniforms.uSegBuf.value = state.segBufRT.texture;
+      lineMat.uniforms.uSegCount.value = state.tipsCap; // or real seg count if you track it
+      lineMat.uniforms.uThickness.value = baseThicknessPx.value;
+      lineMat.uniforms.uLightUpThickness.value = lightUpThicknessPx.value;
+      lineMat.uniforms.uFadeThickness.value = fadeThicknessPx.value;
+      lineMat.uniforms.uColor.value.set(lightningColor.value);
+      lineMat.uniforms.uLightUpColor.value.set(lightUpColor.value);
+      lineMat.uniforms.uFadeColor.value.set(fadeColor.value);
+      lineGeo.instanceCount = state.tipsCap; // or state.segCount if maintained
+    }
+    renderer.setRenderTarget(state.lightningRT);
+    renderer.clear(true, true, true);
+    renderer.render(pointsScene, cameraPoints);
+    renderer.setRenderTarget(null);  // ← always
+
+    // Vertex (GLSL1)
+    const fsqVert = `
+    precision highp float;
+    attribute vec3 position;
+    attribute vec2 uv;
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;                       // or: vUv = position.xy*0.5+0.5;
+      gl_Position = vec4(position, 1.0);
+    }`;
+
+    // Fragment (GLSL1)
+    const fsqFrag = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex;
+    void main() {
+      gl_FragColor = texture2D(uTex, vUv);
+    }`;
+
+    // Build material (ShaderMaterial or RawShaderMaterial)
+    const showLightning = new THREE.RawShaderMaterial({
+      vertexShader: fsqVert,
+      fragmentShader: fsqFrag,
+      uniforms: { uTex: { value: state.lightningRT.texture } },
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NoBlending,
+      transparent: false,
+    });
+
+    fsqMesh.material = showLightning;
+    renderer.setRenderTarget(null);
+    renderer.render(fsqScene, fsqCam); // ensure the camera var name matches
+  }
+
+  function resize(worldSize) {
+    state.worldSize = worldSize;
+    state.gridCols = Math.ceil(worldSize.x / gridCellPx.value);
+    state.gridRows = Math.ceil(worldSize.y / gridCellPx.value);
+    state.startRT = makeTexRT(state.gridCols, state.gridRows, { depth: true });
+    state.endRT   = makeTexRT(state.gridCols, state.gridRows, { depth: true });
+    if (lineMat) lineMat.uniforms.uWorld.value.copy(worldSize);
+    state.lightningRT = new THREE.WebGLRenderTarget(worldSize.x, worldSize.y, {
+      type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
+    });
+  }
+
+  // 2) Each frame (in your step loop), right after you swap pos ping-pong:
+  // lightning hop cadence + render overlay lines
+  let lastMs = performance.now();
+  function stepLightning(){
+    const now = performance.now();
+    const dt = now - lastMs; lastMs = now;
+    lightning.hopIfDue(now);
+    lightning.renderOverlay(now, dt);
+  }
+  // call stepLightning() once per frame after your trail present
+
+  // 3) On resize:
+  function onResize(){
+    const W = glCanvas.value.width, H = glCanvas.value.height;
+    lightning.resize(new THREE.Vector2(W,H));
+  }
+  window.addEventListener('resize', onResize);
+
+  // 4) UI bindings update instantly (already reactive):
+  watch([lightningColor, baseThicknessPx, lightUpColor, fadeColor,
+        lightUpThicknessPx, fadeThicknessPx, maxHopDistPx, splitDecay], ()=>{ /* uniforms are read on render */});
+  watch(hopDelayMs, ()=>{ /* cadence used in hopIfDue */ });
+
+  /* Optional: button to restart a discharge with current params */
+  function newDischarge(){ lightning.resetDischarge(); }
+  return { init, hopIfDue, renderOverlay, resize, resetDischarge, stepLightning };
+})();
 </script>
 
 <style scoped>
